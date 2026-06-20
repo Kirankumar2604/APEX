@@ -1,135 +1,170 @@
 'use client'
 
-import type { SafetyAnalysis } from '@/types'
-import { AlertTriangle, CheckCircle } from 'lucide-react'
+import { useMemo } from 'react'
+import type { SafetyAnalysis, RiskLevel } from '@/types'
+import { ExplainabilityCard } from '@/components/ai/ExplainabilityCard'
+import { EthicsNotice } from '@/components/ai/EthicsNotice'
 
 interface SafetyAgentResultsProps {
   analysis: SafetyAnalysis
   patientName: string
   onRerun: () => void
+  className?: string
 }
 
-const riskColors: Record<string, { bg: string; text: string; icon: string }> = {
-  HIGH: { bg: 'bg-red-900/30', text: 'text-red-100', icon: '⚠️' },
-  MEDIUM: { bg: 'bg-amber-900/30', text: 'text-amber-100', icon: '⚡' },
-  LOW: { bg: 'bg-blue-900/30', text: 'text-blue-100', icon: 'ℹ️' },
-  SAFE: { bg: 'bg-green-900/30', text: 'text-green-100', icon: '✓' },
+const riskColors: Record<RiskLevel, string> = {
+  HIGH: 'bg-red-600 text-white',
+  MEDIUM: 'bg-orange-500 text-white',
+  LOW: 'bg-amber-400 text-slate-900',
+  SAFE: 'bg-emerald-500 text-white'
 }
 
-export function SafetyAgentResults({
-  analysis,
-  patientName,
-  onRerun,
-}: SafetyAgentResultsProps) {
-  const riskStyle = riskColors[analysis.overallRiskLevel]
+function formatCountBadge(count: number) {
+  return count > 0 ? 'bg-red-600 text-white' : 'bg-slate-800 text-slate-400'
+}
+
+export function SafetyAgentResults({ analysis, patientName, onRerun, className = '' }: SafetyAgentResultsProps) {
+  const timestamp = useMemo(() => new Date().toLocaleString(), [])
 
   return (
-    <div className="space-y-6">
-      <div className={`p-4 rounded-lg border ${riskStyle.bg}`}>
-        <div className="flex items-center justify-between mb-2">
-          <h3 className={`font-bold text-lg ${riskStyle.text}`}>
-            {riskStyle.icon} Overall Risk: {analysis.overallRiskLevel}
-          </h3>
+    <div className={`space-y-8 rounded-3xl bg-slate-950/95 p-6 text-slate-100 ${className}`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="text-2xl font-semibold">Clinical Safety Analysis — {patientName}</div>
+          <div className="mt-2 text-sm text-slate-400">{timestamp}</div>
         </div>
-        <p className="text-sm text-slate-300">{patientName}</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <div className="p-3 bg-slate-800 rounded text-center">
-          <div className="text-2xl font-bold text-cyan-400">
-            {analysis.drugInteractions.length}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Drug Interactions</div>
-        </div>
-
-        <div className="p-3 bg-slate-800 rounded text-center">
-          <div className="text-2xl font-bold text-orange-400">
-            {analysis.duplicateMedications.length}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Duplicates</div>
-        </div>
-
-        <div className="p-3 bg-slate-800 rounded text-center">
-          <div className="text-2xl font-bold text-red-400">
-            {analysis.allergyConflicts.length}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Allergy Conflicts</div>
-        </div>
-
-        <div className="p-3 bg-slate-800 rounded text-center">
-          <div className="text-2xl font-bold text-purple-400">
-            {analysis.medicationSafetyRisks.length}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Safety Risks</div>
+        <div className="flex items-center gap-3">
+          <span className={`rounded-full px-4 py-2 text-sm font-semibold ${riskColors[analysis.overallRiskLevel]}`}>{analysis.overallRiskLevel}</span>
+          <button type="button" onClick={onRerun} className="rounded-full bg-slate-800 px-4 py-2 text-sm text-slate-100 hover:bg-slate-700">
+            Re-run Analysis
+          </button>
         </div>
       </div>
 
-      {analysis.drugInteractions.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-cyan-100">Drug Interactions</h4>
-          {analysis.drugInteractions.map((interaction, i) => (
-            <div key={i} className="p-3 bg-slate-800 rounded border-l-2 border-cyan-500">
-              <p className="text-sm font-mono text-cyan-300">
-                {interaction.drugs.join(' + ')}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">{interaction.explanation}</p>
-              <span className={`text-xs font-semibold mt-1 inline-block px-2 py-1 rounded ${riskColors[interaction.severity]?.text || 'text-slate-300'}`}>
-                {interaction.severity}
-              </span>
-            </div>
-          ))}
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className={`rounded-2xl p-4 ${formatCountBadge(analysis.drugInteractions.length)}`}>
+          <div className="text-sm text-slate-200">Drug Interactions</div>
+          <div className="mt-2 text-2xl font-bold">{analysis.drugInteractions.length}</div>
         </div>
-      )}
-
-      {analysis.duplicateMedications.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-orange-100">Duplicate Medications</h4>
-          {analysis.duplicateMedications.map((dup, i) => (
-            <div key={i} className="p-3 bg-slate-800 rounded border-l-2 border-orange-500">
-              <p className="text-sm font-mono text-orange-300">{dup.drug}</p>
-              <p className="text-xs text-slate-400 mt-1">{dup.explanation}</p>
-            </div>
-          ))}
+        <div className={`rounded-2xl p-4 ${formatCountBadge(analysis.duplicateMedications.length)}`}>
+          <div className="text-sm text-slate-200">Duplicate Medications</div>
+          <div className="mt-2 text-2xl font-bold">{analysis.duplicateMedications.length}</div>
         </div>
-      )}
-
-      {analysis.allergyConflicts.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-red-100">Allergy Conflicts</h4>
-          {analysis.allergyConflicts.map((conflict, i) => (
-            <div key={i} className="p-3 bg-slate-800 rounded border-l-2 border-red-500">
-              <p className="text-sm font-mono text-red-300">
-                {conflict.drug} × {conflict.allergy}
-              </p>
-              <p className="text-xs text-slate-400 mt-1">{conflict.explanation}</p>
-            </div>
-          ))}
+        <div className={`rounded-2xl p-4 ${formatCountBadge(analysis.allergyConflicts.length)}`}>
+          <div className="text-sm text-slate-200">Allergy Conflicts</div>
+          <div className="mt-2 text-2xl font-bold">{analysis.allergyConflicts.length}</div>
         </div>
-      )}
-
-      {analysis.medicationSafetyRisks.length > 0 && (
-        <div className="space-y-2">
-          <h4 className="font-semibold text-purple-100">Safety Risks</h4>
-          {analysis.medicationSafetyRisks.map((risk, i) => (
-            <div key={i} className="p-3 bg-slate-800 rounded border-l-2 border-purple-500">
-              <p className="text-sm font-mono text-purple-300">{risk.risk}</p>
-              <p className="text-xs text-slate-400 mt-1">{risk.explanation}</p>
-            </div>
-          ))}
+        <div className={`rounded-2xl p-4 ${formatCountBadge(analysis.medicationSafetyRisks.length)}`}>
+          <div className="text-sm text-slate-200">Safety Risks</div>
+          <div className="mt-2 text-2xl font-bold">{analysis.medicationSafetyRisks.length}</div>
         </div>
-      )}
-
-      <div className="p-3 bg-slate-800 rounded border border-slate-700 text-xs text-slate-400">
-        <p className="font-semibold text-slate-300 mb-1">⚕️ Physician Review Required</p>
-        <p>{analysis.disclaimer}</p>
       </div>
 
-      <button
-        onClick={onRerun}
-        className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded transition-colors"
-      >
-        Re-run Analysis
-      </button>
+      <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Drug Interactions</div>
+            <div className="text-sm text-slate-500">{analysis.drugInteractions.length} findings</div>
+          </div>
+        </div>
+        {analysis.drugInteractions.length > 0 ? (
+          <div className="grid gap-4">
+            {analysis.drugInteractions.map((interaction, index) => (
+              <ExplainabilityCard
+                key={`${interaction.drugs.join('-')}-${index}`}
+                title={`${interaction.drugs.join(' + ')} interaction`}
+                explanation={interaction.explanation}
+                severity={interaction.severity}
+                detectedBy="ai"
+                drugs={interaction.drugs}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/60 p-5 text-emerald-200">No drug interactions detected.</div>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Duplicate Medications</div>
+            <div className="text-sm text-slate-500">{analysis.duplicateMedications.length} findings</div>
+          </div>
+        </div>
+        {analysis.duplicateMedications.length > 0 ? (
+          <div className="grid gap-4">
+            {analysis.duplicateMedications.map((duplicate, index) => (
+              <ExplainabilityCard
+                key={`${duplicate.drug}-${index}`}
+                title={`Duplicate medication: ${duplicate.drug}`}
+                explanation={duplicate.explanation}
+                severity="MEDIUM"
+                detectedBy="ai"
+                drugs={[duplicate.drug]}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/60 p-5 text-emerald-200">No duplicate medications detected.</div>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Allergy Conflicts</div>
+            <div className="text-sm text-slate-500">{analysis.allergyConflicts.length} findings</div>
+          </div>
+        </div>
+        {analysis.allergyConflicts.length > 0 ? (
+          <div className="grid gap-4">
+            {analysis.allergyConflicts.map((conflict, index) => (
+              <ExplainabilityCard
+                key={`${conflict.drug}-${conflict.allergy}-${index}`}
+                title={`${conflict.drug} allergy conflict`}
+                explanation={conflict.explanation}
+                severity="HIGH"
+                detectedBy="ai"
+                drugs={[conflict.drug, conflict.allergy]}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/60 p-5 text-emerald-200">No allergy conflicts detected.</div>
+        )}
+      </section>
+
+      <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="text-lg font-semibold">Medication Safety Risks</div>
+            <div className="text-sm text-slate-500">{analysis.medicationSafetyRisks.length} findings</div>
+          </div>
+        </div>
+        {analysis.medicationSafetyRisks.length > 0 ? (
+          <div className="grid gap-4">
+            {analysis.medicationSafetyRisks.map((risk, index) => (
+              <ExplainabilityCard
+                key={`${risk.risk}-${index}`}
+                title={risk.risk}
+                explanation={risk.explanation}
+                severity="MEDIUM"
+                detectedBy="ai"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-emerald-600/40 bg-emerald-950/60 p-5 text-emerald-200">No medication safety risks detected.</div>
+        )}
+      </section>
+
+      <div className="space-y-3">
+        <EthicsNotice variant="footer" />
+        <p className="text-sm text-slate-500">Analysis performed by AI — all findings require physician review</p>
+      </div>
     </div>
   )
 }
+
+export default SafetyAgentResults

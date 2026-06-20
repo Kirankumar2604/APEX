@@ -1,134 +1,170 @@
-import { NextRequest, NextResponse } from 'next/server'
-import type { PatientVault, SafetyAnalysis } from '@/types'
+import type { LabReport, Prescription, SafetyAnalysis } from '@/types'
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+interface SafetyRequestBody {
+  patientName: string
+  prescriptions: Prescription[]
+  allergies: string[]
+  conditions: string[]
+  labReports: LabReport[]
+  medicationHistory: string[]
+  bloodGroup?: string
+}
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  try {
-    if (!ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: 'API key not configured' },
-        { status: 500 }
-      )
-    }
+const SYSTEM_PROMPT = `You are a Clinical Safety Agent for a medical AI system.
+Your role is to analyze prescription data and identify potential
+safety concerns for physician review. You are NOT a replacement
+for medical professionals. Always explain your reasoning clearly
+and flag concerns for human review only.
 
-    const vault: PatientVault = await request.json()
-
-    // Validate vault
-    if (!vault.patientId || !vault.prescriptions) {
-      return NextResponse.json(
-        { error: 'Invalid vault data' },
-        { status: 400 }
-      )
-    }
-
-    // Build prompt for Claude
-    const prescriptionsList = vault.prescriptions
-      .map(
-        (rx) =>
-          `- ${rx.drugName} ${rx.dosage}, ${rx.frequency} (by ${rx.prescribedBy})`
-      )
-      .join('\n')
-
-    const allergiesList = vault.allergies.join(', ') || 'None reported'
-    const conditionsList = vault.conditions.join(', ') || 'None reported'
-
-    const prompt = `You are a Clinical Safety Agent analyzing prescription data.
-
-Patient: ${vault.patientName} (DOB: ${vault.dateOfBirth}, Blood Group: ${vault.bloodGroup})
-Known Allergies: ${allergiesList}
-Medical Conditions: ${conditionsList}
-
-Current Prescriptions:
-${prescriptionsList}
-
-Medication History: ${vault.medicationHistory.join('; ')}
-
-Analyze this patient's prescriptions for:
-1. Potential drug interactions
-2. Duplicate medications
-3. Allergy conflicts
-4. Medication safety risks
-
-Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
+Analyze the provided patient prescription data and return ONLY
+a valid JSON object with NO additional text, no markdown,
+no code blocks. Return exactly this structure:
 {
-  "drug_interactions": [{"drugs": ["drug1", "drug2"], "severity": "HIGH|MEDIUM|LOW|SAFE", "explanation": "..."}],
-  "duplicate_medications": [{"drug": "...", "explanation": "..."}],
-  "allergy_conflicts": [{"drug": "...", "allergy": "...", "explanation": "..."}],
-  "medication_safety_risks": [{"risk": "...", "explanation": "..."}],
-  "overall_risk_level": "HIGH|MEDIUM|LOW|SAFE",
-  "disclaimer": "This analysis is for physician review only and not a substitute for professional medical judgment."
+  'drug_interactions': [
+    {
+      'drugs': ['drug1', 'drug2'],
+      'severity': 'HIGH' or 'MEDIUM' or 'LOW',
+      'explanation': 'detailed explanation of why this is dangerous'
+    }
+  ],
+  'duplicate_medications': [
+    {
+      'drug': 'drug name',
+      'explanation': 'explanation of duplication issue'
+    }
+  ],
+  'allergy_conflicts': [
+    {
+      'drug': 'drug name',
+      'allergy': 'allergy name',
+      'explanation': 'why this is dangerous'
+    }
+  ],
+  'medication_safety_risks': [
+    {
+      'risk': 'risk description',
+      'explanation': 'detailed explanation'
+    }
+  ],
+  'overall_risk_level': 'HIGH' or 'MEDIUM' or 'LOW' or 'SAFE',
+  'disclaimer': 'AI-generated insights for physician review only.\n    Not a substitute for professional medical judgment.'
 }`
 
+function buildUserMessage(body: SafetyRequestBody): string {
+  const conditions = body.conditions.length ? body.conditions.join(', ') : 'None'
+  const allergies = body.allergies.length ? body.allergies.join(', ') : 'None'
+  const prescriptions = body.prescriptions
+    .map((prescription) => {
+      const status = prescription.isActive ? 'Active' : 'Expired'
+      return `- ${prescription.drugName} ${prescription.dosage} - ${prescription.frequency}\n  Prescribed by: ${prescription.prescribedBy} on ${prescription.prescribedDate}\n  Status: ${status}`
+    })
+    .join('\n')
+  const labResults = body.labReports
+    .map((labReport) => {
+      const abnormal = labReport.isAbnormal ? 'ABNORMAL' : ''
+      return `- ${labReport.testName}: ${labReport.result} (Reference: ${labReport.referenceRange}) ${abnormal}`.trim()
+    })
+    .join('\n')
+  const medicationHistory = body.medicationHistory.length
+    ? body.medicationHistory.map((item) => `- ${item}`).join('\n')
+    : 'None'
+
+  return `Analyze this patient's prescription data for safety concerns:\n\nPatient: ${body.patientName}\nConditions: ${conditions}\nAllergies: ${allergies}\nBlood Group: ${body.bloodGroup ?? 'Unknown'}\n\nCURRENT PRESCRIPTIONS:\n${prescriptions}\n\nLAB RESULTS:\n${labResults}\n\nMEDICATION HISTORY:\n${medicationHistory}\n\nIdentify ALL drug interactions, allergy conflicts, duplicate medications, and safety risks.`
+}
+
+function sanitizeJsonResponse(text: string): string {
+  const stripped = text.replace(/```/g, '').replace(/`/g, '').trim()
+  return stripped
+}
+
+function parseRiskLevel(value: string): SafetyAnalysis['overallRiskLevel'] {
+  const normalized = value?.toUpperCase?.().trim()
+  if (normalized === 'HIGH' || normalized === 'MEDIUM' || normalized === 'LOW' || normalized === 'SAFE') {
+    return normalized
+  }
+  return 'LOW'
+}
+
+export async function POST(request: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Missing Anthropic API key' }), { status: 500, headers: { 'content-type': 'application/json' } })
+  }
+
+  let body: SafetyRequestBody
+
+  try {
+    body = (await request.json()) as SafetyRequestBody
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: { 'content-type': 'application/json' } })
+  }
+
+  if (!Array.isArray(body.prescriptions) || body.prescriptions.length === 0) {
+    return new Response(JSON.stringify({ error: 'Prescriptions are required' }), { status: 400, headers: { 'content-type': 'application/json' } })
+  }
+
+  const userMessage = buildUserMessage(body)
+
+  try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-6',
         max_tokens: 2000,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }]
+      })
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Claude API error:', errorText)
-      return NextResponse.json(
-        { error: 'Failed to analyze prescriptions' },
-        { status: 500 }
-      )
+      return new Response(JSON.stringify({ error: 'Claude API error', details: errorText }), { status: 502, headers: { 'content-type': 'application/json' } })
     }
 
-    const data = await response.json()
-    const responseText = data.content[0]?.text || ''
+    const json = await response.json()
+    const text = String(json?.content?.[0]?.text ?? '')
+    const cleaned = sanitizeJsonResponse(text)
 
-    // Parse JSON from response
-    let analysis
+    let parsed: unknown
     try {
-      // Try to extract JSON if it's wrapped in markdown
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-      const jsonString = jsonMatch ? jsonMatch[0] : responseText
-      analysis = JSON.parse(jsonString)
+      parsed = JSON.parse(cleaned)
     } catch {
-      console.error('Failed to parse Claude response:', responseText)
-      return NextResponse.json(
-        { error: 'Failed to parse analysis response' },
-        { status: 500 }
-      )
+      return new Response(JSON.stringify({ error: 'Failed to parse Claude response', raw: cleaned }), { status: 500, headers: { 'content-type': 'application/json' } })
     }
 
-    // Map response to SafetyAnalysis type
+    const parsedObject = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {}
+
+    const toArray = <T>(value: unknown): T[] => (Array.isArray(value) ? value as T[] : [])
+
     const safetyAnalysis: SafetyAnalysis = {
-      drugInteractions: analysis.drug_interactions || [],
-      duplicateMedications: analysis.duplicate_medications || [],
-      allergyConflicts: analysis.allergy_conflicts || [],
-      medicationSafetyRisks: analysis.medication_safety_risks || [],
-      overallRiskLevel: analysis.overall_risk_level || 'SAFE',
-      disclaimer:
-        analysis.disclaimer ||
-        'AI-generated analysis for physician review only.',
+      drugInteractions: toArray<Record<string, unknown>>(parsedObject.drug_interactions).map((interaction) => ({
+        drugs: Array.isArray(interaction?.drugs) ? interaction.drugs.map(String) : [],
+        severity: parseRiskLevel(String(interaction?.severity ?? 'LOW')),
+        explanation: String(interaction?.explanation ?? '')
+      })),
+      duplicateMedications: toArray<Record<string, unknown>>(parsedObject.duplicate_medications).map((duplicate) => ({
+        drug: String(duplicate?.drug ?? ''),
+        explanation: String(duplicate?.explanation ?? '')
+      })),
+      allergyConflicts: toArray<Record<string, unknown>>(parsedObject.allergy_conflicts).map((conflict) => ({
+        drug: String(conflict?.drug ?? ''),
+        allergy: String(conflict?.allergy ?? ''),
+        explanation: String(conflict?.explanation ?? '')
+      })),
+      medicationSafetyRisks: toArray<Record<string, unknown>>(parsedObject.medication_safety_risks).map((risk) => ({
+        risk: String(risk?.risk ?? ''),
+        explanation: String(risk?.explanation ?? '')
+      })),
+      overallRiskLevel: parseRiskLevel(String(parsedObject.overall_risk_level ?? 'LOW')),
+      disclaimer: String(parsedObject.disclaimer ?? 'AI-generated insights for physician review only. Not a substitute for professional medical judgment.')
     }
 
-    // Increment counter
-    if (typeof window === 'undefined') {
-      // Server-side counter tracking would go here
-    }
-
-    return NextResponse.json(safetyAnalysis)
-  } catch (error) {
-    console.error('Safety analysis error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return new Response(JSON.stringify(safetyAnalysis), { status: 200, headers: { 'content-type': 'application/json' } })
+  } catch (error: unknown) {
+    return new Response(JSON.stringify({ error: 'Claude API request failed', details: String(error) }), { status: 502, headers: { 'content-type': 'application/json' } })
   }
 }
