@@ -260,6 +260,16 @@ export function getAllVaults(): PatientVault[] {
 }
 
 export function getVaultByPatientId(patientId: string): PatientVault | undefined {
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`vault_${patientId}`)
+      if (raw) {
+        return JSON.parse(raw) as PatientVault
+      }
+    } catch {
+      // Ignore storage read failures.
+    }
+  }
   return ALL_VAULTS.find((vault) => vault.patientId === patientId)
 }
 

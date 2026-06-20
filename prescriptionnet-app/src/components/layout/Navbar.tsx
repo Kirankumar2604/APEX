@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { auth, signOut } from '@/lib/firebase'
 import {
   Activity,
   LogOut,
@@ -79,7 +80,12 @@ export default function Navbar() {
     }
   }, [])
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+    } catch {
+      // Ignore auth logout errors.
+    }
     localStorage.removeItem('prescriptionnet_currentUser')
     router.push('/')
   }
