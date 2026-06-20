@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import type { ConsentPurpose, ConsentScope, ConsentDuration } from '@/types'
-import { getPatients } from '@/lib/mockData'
+import { useMemo, useState } from 'react'
+import { CheckCircle2, Search } from 'lucide-react'
+import type { ConsentDuration, ConsentPurpose, ConsentScope } from '@/types'
+import { getPatients, getUserById } from '@/lib/mockData'
+import { useConsent } from '@/hooks/useConsent'
 
 interface AccessRequestFormProps {
   requesterId: string
@@ -11,12 +13,31 @@ interface AccessRequestFormProps {
   onSubmitted: () => void
 }
 
+const PURPOSES: ConsentPurpose[] = [
+  'Consultation',
+  'Emergency',
+  'Prescription Refill',
+  'Insurance Claim',
+  'Lab Review',
+]
+
+const SCOPES: ConsentScope[] = [
+  'Prescriptions Only',
+  'Lab Reports Only',
+  'Full Medical History',
+  'Allergies Only',
+]
+
+const DURATIONS: ConsentDuration[] = ['1 Hour', '24 Hours', '7 Days', 'One-Time']
+
 export function AccessRequestForm({
   requesterId,
   requesterName,
   requesterRole,
   onSubmitted,
 }: AccessRequestFormProps) {
+  const { submitRequest } = useConsent(undefined, requesterId)
+  const patients = useMemo(() => getPatients(), [])
   const [formData, setFormData] = useState({
     patientId: '',
     purpose: 'Consultation' as ConsentPurpose,
@@ -24,170 +45,183 @@ export function AccessRequestForm({
     duration: '24 Hours' as ConsentDuration,
     message: '',
   })
-
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const patients = getPatients()
+  const [successMessage, setSuccessMessage] = useState('')
 
-  const purposes: ConsentPurpose[] = [
-    'Consultation',
-    'Emergency',
-    'Prescription Refill',
-    'Insurance Claim',
-    'Lab Review',
-  ]
-
-  const scopes: ConsentScope[] = [
-    'Prescriptions Only',
-    'Lab Reports Only',
-    'Full Medical History',
-    'Allergies Only',
-  ]
-
-  const durations: ConsentDuration[] = ['1 Hour', '24 Hours', '7 Days', 'One-Time']
+  const selectedPatient = getUserById(formData.patientId)
 
   const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-    >
+    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: '' }))
-    }
+    const { name, value } = event.target
+    setFormData((previous) => ({ ...previous, [name]: value }))
+    setErrors((previous) => ({ ...previous, [name]: '' }))
+    setSuccessMessage('')
   }
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {}
+  const validate = () => {
+    const nextErrors: Record<string, string> = {}
+    const patient = getUserById(formData.patientId)
 
     if (!formData.patientId) {
-      newErrors.patientId = 'Patient selection required'
+      nextErrors.patientId = 'Patient ID is required'
+    } else if (!patient || patient.role !== 'patient') {
+      nextErrors.patientId = 'Patient must exist in the registry'
     }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    if (!formData.purpose) nextErrors.purpose = 'Purpose is required'
+    if (!formData.scope) nextErrors.scope = 'Scope is required'
+    if (!formData.duration) nextErrors.duration = 'Duration is required'
+
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!validate()) return
 
-    if (!validateForm()) return
+    submitRequest({
+      requesterId,
+      requesterName,
+      requesterRole,
+      patientId: formData.patientId,
+      purpose: formData.purpose,
+      scope: formData.scope,
+      duration: formData.duration,
+      message: formData.message.trim() || undefined,
+    })
 
-    try {
-      // Here you would call submitAccessRequest from useConsent
-      onSubmitted()
-      setFormData({
-        patientId: '',
-        purpose: 'Consultation',
-        scope: 'Prescriptions Only',
-        duration: '24 Hours',
-        message: '',
-      })
-    } catch (error) {
-      console.error('Failed to submit request:', error)
-    }
+    setSuccessMessage('Request submitted. Waiting for patient authorization.')
+    setFormData({
+      patientId: '',
+      purpose: 'Consultation',
+      scope: 'Prescriptions Only',
+      duration: '24 Hours',
+      message: '',
+    })
+    setErrors({})
+    onSubmitted()
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Select Patient *
-        </label>
-        <select
-          name="patientId"
-          value={formData.patientId}
-          onChange={handleChange}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-        >
-          <option value="">-- Choose a patient --</option>
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-200">Patient ID *</label>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input
+            name="patientId"
+            value={formData.patientId}
+            onChange={handleChange}
+            list="patient-options"
+            placeholder="patient-001"
+            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-10 py-3 text-slate-100 outline-none transition focus:border-cyan-500"
+          />
+        </div>
+        <datalist id="patient-options">
           {patients.map((patient) => (
             <option key={patient.id} value={patient.id}>
               {patient.name}
             </option>
           ))}
-        </select>
-        {errors.patientId && (
-          <p className="text-xs text-red-400 mt-1">{errors.patientId}</p>
-        )}
+        </datalist>
+        {errors.patientId ? (
+          <p className="text-xs text-red-400">{errors.patientId}</p>
+        ) : selectedPatient ? (
+          <p className="text-xs text-emerald-300">
+            {selectedPatient.name} verified
+          </p>
+        ) : null}
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Purpose of Access
-        </label>
-        <select
+      <div className="grid gap-4 md:grid-cols-3">
+        <Field
+          label="Purpose *"
           name="purpose"
           value={formData.purpose}
+          error={errors.purpose}
           onChange={handleChange}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-        >
-          {purposes.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Data Scope
-        </label>
-        <select
+          options={PURPOSES}
+        />
+        <Field
+          label="Data Scope *"
           name="scope"
           value={formData.scope}
+          error={errors.scope}
           onChange={handleChange}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-        >
-          {scopes.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Access Duration
-        </label>
-        <select
+          options={SCOPES}
+        />
+        <Field
+          label="Duration *"
           name="duration"
           value={formData.duration}
+          error={errors.duration}
           onChange={handleChange}
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-        >
-          {durations.map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
-        </select>
+          options={DURATIONS}
+        />
       </div>
 
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Message (Optional)
-        </label>
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-200">Message (Optional)</label>
         <textarea
           name="message"
           value={formData.message}
           onChange={handleChange}
-          rows={3}
-          placeholder="Explain why you need this data..."
-          className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none resize-none"
+          rows={4}
+          placeholder="Reason for access request (optional)"
+          className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-500"
         />
       </div>
 
-      <div className="pt-4 border-t border-slate-700">
-        <button
-          type="submit"
-          className="w-full px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded transition-colors"
-        >
-          Submit Access Request
-        </button>
-      </div>
+      {successMessage ? (
+        <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-200">
+          <CheckCircle2 className="h-4 w-4" />
+          {successMessage}
+        </div>
+      ) : null}
+
+      <button
+        type="submit"
+        className="w-full rounded-xl bg-cyan-500 px-4 py-3 font-semibold text-slate-950 transition hover:bg-cyan-400"
+      >
+        Submit Access Request
+      </button>
     </form>
+  )
+}
+
+function Field({
+  label,
+  name,
+  value,
+  error,
+  onChange,
+  options,
+}: {
+  label: string
+  name: string
+  value: string
+  error?: string
+  onChange: React.ChangeEventHandler<HTMLSelectElement>
+  options: string[]
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="text-sm font-medium text-slate-200">{label}</label>
+      <select
+        name={name}
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-500"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+    </div>
   )
 }

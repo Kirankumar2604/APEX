@@ -462,8 +462,8 @@ export async function sha256Hash(data: string): Promise<string> {
   }
 }
 
-export function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer)
+export function arrayBufferToBase64(buffer: ArrayBufferLike | Uint8Array<ArrayBufferLike>): string {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
   let binary = ''
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i])

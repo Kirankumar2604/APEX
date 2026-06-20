@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { X } from 'lucide-react'
-import type { Prescription, LabReport } from '@/types'
+import { useEffect, useState } from 'react'
+import type { LabReport, Prescription } from '@/types'
+import Modal from '@/components/ui/Modal'
+import { useVault } from '@/hooks/useVault'
 
 interface AddRecordModalProps {
   patientId: string
@@ -12,6 +13,10 @@ interface AddRecordModalProps {
   onAdded: () => void
 }
 
+type PrescriptionFormState = Omit<Prescription, 'id' | 'patientId'>
+
+type LabFormState = Omit<LabReport, 'id' | 'patientId'>
+
 export function AddRecordModal({
   patientId,
   type,
@@ -19,240 +24,268 @@ export function AddRecordModal({
   onClose,
   onAdded,
 }: AddRecordModalProps) {
-  const [formData, setFormData] = useState<any>({})
+  const { addPrescription, addLabReport } = useVault(patientId)
+  const [submitError, setSubmitError] = useState('')
+  const [prescriptionForm, setPrescriptionForm] = useState<PrescriptionFormState>({
+    drugName: '',
+    dosage: '',
+    frequency: '',
+    prescribedBy: '',
+    prescribedDate: '',
+    expiryDate: '',
+    isActive: true,
+  })
+  const [labForm, setLabForm] = useState<LabFormState>({
+    testName: '',
+    result: '',
+    referenceRange: '',
+    isAbnormal: false,
+    conductedDate: '',
+    conductedBy: '',
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: '' }))
-    }
+  useEffect(() => {
+    if (!isOpen) return
+    setSubmitError('')
+    setErrors({})
+    setPrescriptionForm({
+      drugName: '',
+      dosage: '',
+      frequency: '',
+      prescribedBy: '',
+      prescribedDate: '',
+      expiryDate: '',
+      isActive: true,
+    })
+    setLabForm({
+      testName: '',
+      result: '',
+      referenceRange: '',
+      isAbnormal: false,
+      conductedDate: '',
+      conductedBy: '',
+    })
+  }, [isOpen, type])
+
+  const validatePrescription = () => {
+    const nextErrors: Record<string, string> = {}
+    if (!prescriptionForm.drugName.trim()) nextErrors.drugName = 'Drug name is required'
+    if (!prescriptionForm.dosage.trim()) nextErrors.dosage = 'Dosage is required'
+    if (!prescriptionForm.frequency.trim()) nextErrors.frequency = 'Frequency is required'
+    if (!prescriptionForm.prescribedBy.trim()) nextErrors.prescribedBy = 'Prescriber is required'
+    if (!prescriptionForm.prescribedDate) nextErrors.prescribedDate = 'Prescribed date is required'
+    if (!prescriptionForm.expiryDate) nextErrors.expiryDate = 'Expiry date is required'
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {}
-
-    if (type === 'prescription') {
-      if (!formData.drugName?.trim()) newErrors.drugName = 'Drug name required'
-      if (!formData.dosage?.trim()) newErrors.dosage = 'Dosage required'
-      if (!formData.frequency?.trim()) newErrors.frequency = 'Frequency required'
-      if (!formData.prescribedBy?.trim()) newErrors.prescribedBy = 'Prescriber name required'
-      if (!formData.prescribedDate) newErrors.prescribedDate = 'Prescribed date required'
-      if (!formData.expiryDate) newErrors.expiryDate = 'Expiry date required'
-    } else {
-      if (!formData.testName?.trim()) newErrors.testName = 'Test name required'
-      if (!formData.result?.trim()) newErrors.result = 'Result required'
-      if (!formData.referenceRange?.trim()) newErrors.referenceRange = 'Reference range required'
-      if (!formData.conductedDate) newErrors.conductedDate = 'Test date required'
-      if (!formData.conductedBy?.trim()) newErrors.conductedBy = 'Lab name required'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+  const validateLab = () => {
+    const nextErrors: Record<string, string> = {}
+    if (!labForm.testName.trim()) nextErrors.testName = 'Test name is required'
+    if (!labForm.result.trim()) nextErrors.result = 'Result is required'
+    if (!labForm.referenceRange.trim()) nextErrors.referenceRange = 'Reference range is required'
+    if (!labForm.conductedDate) nextErrors.conductedDate = 'Conducted date is required'
+    if (!labForm.conductedBy.trim()) nextErrors.conductedBy = 'Lab or doctor name is required'
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const resetAndClose = () => {
+    onAdded()
+    onClose()
+  }
 
-    if (!validateForm()) return
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setSubmitError('')
 
     try {
       if (type === 'prescription') {
-        // Would call useVault hook here
-        onAdded()
+        if (!validatePrescription()) return
+        await addPrescription(prescriptionForm)
       } else {
-        // Would call useVault hook here
-        onAdded()
+        if (!validateLab()) return
+        await addLabReport(labForm)
       }
-      setFormData({})
-      onClose()
+      resetAndClose()
     } catch (error) {
-      console.error('Failed to add record:', error)
+      setSubmitError(error instanceof Error ? error.message : 'Failed to save record')
     }
   }
 
-  if (!isOpen) return null
+  const footer = (
+    <>
+      <button
+        type="button"
+        onClick={onClose}
+        className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100"
+      >
+        Cancel
+      </button>
+      <button
+        type="submit"
+        form="add-record-form"
+        className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950"
+      >
+        {type === 'prescription' ? 'Add Prescription' : 'Add Lab Report'}
+      </button>
+    </>
+  )
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-slate-900 rounded-lg border border-cyan-500/30 p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-cyan-100">
-            Add {type === 'prescription' ? 'Prescription' : 'Lab Report'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-100"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={type === 'prescription' ? 'Add Prescription' : 'Add Lab Report'}
+      footer={footer}
+      maxWidth="720px"
+    >
+      <form id="add-record-form" onSubmit={handleSubmit} className="space-y-4">
+        {type === 'prescription' ? (
+          <PrescriptionFields
+            value={prescriptionForm}
+            errors={errors}
+            onChange={setPrescriptionForm}
+          />
+        ) : (
+          <LabFields value={labForm} errors={errors} onChange={setLabForm} />
+        )}
+        {submitError ? (
+          <p className="rounded-xl border border-rose-500/30 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+            {submitError}
+          </p>
+        ) : null}
+      </form>
+    </Modal>
+  )
+}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {type === 'prescription' ? (
-            <>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Drug Name *</label>
-                <input
-                  type="text"
-                  name="drugName"
-                  value={formData.drugName || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., Metformin"
-                />
-                {errors.drugName && <p className="text-xs text-red-400 mt-1">{errors.drugName}</p>}
-              </div>
+function PrescriptionFields({
+  value,
+  errors,
+  onChange,
+}: {
+  value: PrescriptionFormState
+  errors: Record<string, string>
+  onChange: React.Dispatch<React.SetStateAction<PrescriptionFormState>>
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <TextField label="Drug Name" value={value.drugName} error={errors.drugName} onChange={(drugName) => onChange((current) => ({ ...current, drugName }))} />
+      <TextField label="Dosage" value={value.dosage} error={errors.dosage} onChange={(dosage) => onChange((current) => ({ ...current, dosage }))} />
+      <TextField label="Frequency" value={value.frequency} error={errors.frequency} onChange={(frequency) => onChange((current) => ({ ...current, frequency }))} />
+      <TextField label="Prescribed By" value={value.prescribedBy} error={errors.prescribedBy} onChange={(prescribedBy) => onChange((current) => ({ ...current, prescribedBy }))} />
+      <DateField label="Prescribed Date" value={value.prescribedDate} error={errors.prescribedDate} onChange={(prescribedDate) => onChange((current) => ({ ...current, prescribedDate }))} />
+      <DateField label="Expiry Date" value={value.expiryDate} error={errors.expiryDate} onChange={(expiryDate) => onChange((current) => ({ ...current, expiryDate }))} />
+      <ToggleField
+        label="Is Active"
+        value={value.isActive}
+        onChange={(isActive) => onChange((current) => ({ ...current, isActive }))}
+      />
+    </div>
+  )
+}
 
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Dosage *</label>
-                <input
-                  type="text"
-                  name="dosage"
-                  value={formData.dosage || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., 500mg"
-                />
-                {errors.dosage && <p className="text-xs text-red-400 mt-1">{errors.dosage}</p>}
-              </div>
+function LabFields({
+  value,
+  errors,
+  onChange,
+}: {
+  value: LabFormState
+  errors: Record<string, string>
+  onChange: React.Dispatch<React.SetStateAction<LabFormState>>
+}) {
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <TextField label="Test Name" value={value.testName} error={errors.testName} onChange={(testName) => onChange((current) => ({ ...current, testName }))} />
+      <TextField label="Result" value={value.result} error={errors.result} onChange={(result) => onChange((current) => ({ ...current, result }))} />
+      <TextField label="Reference Range" value={value.referenceRange} error={errors.referenceRange} onChange={(referenceRange) => onChange((current) => ({ ...current, referenceRange }))} />
+      <DateField label="Conducted Date" value={value.conductedDate} error={errors.conductedDate} onChange={(conductedDate) => onChange((current) => ({ ...current, conductedDate }))} />
+      <TextField label="Conducted By" value={value.conductedBy} error={errors.conductedBy} onChange={(conductedBy) => onChange((current) => ({ ...current, conductedBy }))} />
+      <ToggleField
+        label="Is Abnormal"
+        value={value.isAbnormal}
+        onChange={(isAbnormal) => onChange((current) => ({ ...current, isAbnormal }))}
+      />
+    </div>
+  )
+}
 
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Frequency *</label>
-                <input
-                  type="text"
-                  name="frequency"
-                  value={formData.frequency || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., Twice daily"
-                />
-                {errors.frequency && <p className="text-xs text-red-400 mt-1">{errors.frequency}</p>}
-              </div>
+function TextField({
+  label,
+  value,
+  error,
+  onChange,
+}: {
+  label: string
+  value: string
+  error?: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="block text-sm font-medium text-slate-200">{label} *</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-500"
+      />
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+    </label>
+  )
+}
 
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Prescriber *</label>
-                <input
-                  type="text"
-                  name="prescribedBy"
-                  value={formData.prescribedBy || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., Dr. Smith"
-                />
-                {errors.prescribedBy && <p className="text-xs text-red-400 mt-1">{errors.prescribedBy}</p>}
-              </div>
+function DateField({
+  label,
+  value,
+  error,
+  onChange,
+}: {
+  label: string
+  value: string
+  error?: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="space-y-2">
+      <span className="block text-sm font-medium text-slate-200">{label} *</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-slate-100 outline-none transition focus:border-cyan-500"
+      />
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+    </label>
+  )
+}
 
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Prescribed Date *</label>
-                <input
-                  type="date"
-                  name="prescribedDate"
-                  value={formData.prescribedDate || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                />
-                {errors.prescribedDate && <p className="text-xs text-red-400 mt-1">{errors.prescribedDate}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Expiry Date *</label>
-                <input
-                  type="date"
-                  name="expiryDate"
-                  value={formData.expiryDate || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                />
-                {errors.expiryDate && <p className="text-xs text-red-400 mt-1">{errors.expiryDate}</p>}
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Test Name *</label>
-                <input
-                  type="text"
-                  name="testName"
-                  value={formData.testName || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., HbA1c"
-                />
-                {errors.testName && <p className="text-xs text-red-400 mt-1">{errors.testName}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Result *</label>
-                <input
-                  type="text"
-                  name="result"
-                  value={formData.result || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., 7.8%"
-                />
-                {errors.result && <p className="text-xs text-red-400 mt-1">{errors.result}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Reference Range *</label>
-                <input
-                  type="text"
-                  name="referenceRange"
-                  value={formData.referenceRange || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., Below 7.0%"
-                />
-                {errors.referenceRange && <p className="text-xs text-red-400 mt-1">{errors.referenceRange}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Test Date *</label>
-                <input
-                  type="date"
-                  name="conductedDate"
-                  value={formData.conductedDate || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                />
-                {errors.conductedDate && <p className="text-xs text-red-400 mt-1">{errors.conductedDate}</p>}
-              </div>
-
-              <div>
-                <label className="block text-sm text-slate-300 mb-1">Lab Name *</label>
-                <input
-                  type="text"
-                  name="conductedBy"
-                  value={formData.conductedBy || ''}
-                  onChange={handleChange}
-                  className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded text-slate-100 focus:border-cyan-500 outline-none"
-                  placeholder="e.g., Metropolis Labs"
-                />
-                {errors.conductedBy && <p className="text-xs text-red-400 mt-1">{errors.conductedBy}</p>}
-              </div>
-            </>
-          )}
-
-          <div className="flex gap-2 pt-4 border-t border-slate-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-3 py-2 text-slate-100 bg-slate-800 hover:bg-slate-700 rounded transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-semibold rounded transition-colors"
-            >
-              Add Record
-            </button>
-          </div>
-        </form>
-      </div>
+function ToggleField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: boolean
+  onChange: (value: boolean) => void
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-slate-700 bg-slate-900 px-4 py-3">
+      <span className="text-sm font-medium text-slate-200">{label}</span>
+      <button
+        type="button"
+        onClick={() => onChange(!value)}
+        className={`relative inline-flex h-7 w-12 items-center rounded-full border transition ${
+          value ? 'border-emerald-500/40 bg-emerald-500' : 'border-slate-600 bg-slate-700'
+        }`}
+      >
+        <span
+          className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+            value ? 'translate-x-6' : 'translate-x-1'
+          }`}
+        />
+      </button>
     </div>
   )
 }

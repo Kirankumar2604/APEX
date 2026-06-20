@@ -1,13 +1,15 @@
 'use client'
 
 import { useState } from 'react'
+import { ShieldCheck, Trash2 } from 'lucide-react'
 import type { Consent } from '@/types'
-import { Lock, Trash2 } from 'lucide-react'
+import CountdownTimer from '@/components/dashboard/CountdownTimer'
+import Modal from '@/components/ui/Modal'
 
 interface ConsentCardProps {
   consent: Consent
   requesterName: string
-  onRevoke: (id: string) => void
+  onRevoke: (consentId: string) => void
   showRevoke?: boolean
 }
 
@@ -18,117 +20,124 @@ export function ConsentCard({
   showRevoke = true,
 }: ConsentCardProps) {
   const [showConfirm, setShowConfirm] = useState(false)
+  const isActive = consent.status === 'active'
+  const isExpired = consent.status === 'expired'
+  const isRevoked = consent.status === 'revoked'
 
   const handleRevoke = () => {
     onRevoke(consent.id)
     setShowConfirm(false)
   }
 
-  const isExpired = new Date(consent.expiresAt) < new Date()
-  const isRevoked = consent.status === 'revoked'
-
-  const statusColor = isExpired
-    ? 'bg-slate-800'
-    : isRevoked
-      ? 'bg-red-900/30'
-      : 'bg-green-900/30'
-
-  const statusText = isExpired
-    ? 'Expired'
-    : isRevoked
-      ? 'Revoked'
-      : 'Active'
-
-  const statusBadgeColor = isExpired
-    ? 'bg-slate-700 text-slate-300'
-    : isRevoked
-      ? 'bg-red-700 text-red-100'
-      : 'bg-green-700 text-green-100'
+  const statusLabel = isActive ? 'ACTIVE' : isExpired ? 'EXPIRED' : 'REVOKED'
+  const statusClass = isActive
+    ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+    : isExpired
+      ? 'bg-slate-500/15 text-slate-300 border-slate-500/30'
+      : 'bg-rose-500/15 text-rose-300 border-rose-500/30'
 
   return (
     <>
-      <div className={`rounded-lg border ${isExpired ? 'border-slate-700' : isRevoked ? 'border-red-500/30' : 'border-green-500/30'} p-4 ${statusColor}`}>
-        <div className="flex items-start justify-between mb-3">
+      <div
+        className={`rounded-2xl border p-4 ${
+          isActive ? 'border-emerald-500/30 bg-slate-900/80' : 'border-slate-700 bg-slate-900/60'
+        }`}
+      >
+        <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h4 className="font-semibold text-slate-100">{requesterName}</h4>
-            <p className="text-xs text-slate-400 mt-1">
-              {consent.purpose} • {consent.scope}
+            <div className="flex items-center gap-2">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${isActive ? 'animate-pulse bg-emerald-400' : isExpired ? 'bg-slate-500' : 'bg-rose-400'}`}
+              />
+              <h4 className="text-base font-semibold text-slate-100">{requesterName}</h4>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              {consent.scope} · {consent.purpose}
             </p>
           </div>
-          <span
-            className={`text-xs px-2 py-1 rounded font-medium ${statusBadgeColor}`}
-          >
-            {statusText}
+          <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide ${statusClass}`}>
+            {statusLabel}
           </span>
         </div>
 
-        <div className="space-y-2 text-sm mb-4">
-          <div className="flex justify-between">
-            <span className="text-slate-400">Granted:</span>
-            <span className="text-slate-200">
-              {new Date(consent.grantedAt).toLocaleDateString()}
-            </span>
-          </div>
-
-          <div className="flex justify-between">
-            <span className="text-slate-400">Expires:</span>
-            <span className={isExpired ? 'text-red-300' : 'text-slate-200'}>
-              {new Date(consent.expiresAt).toLocaleDateString()}
-              {' '}
-              {new Date(consent.expiresAt).toLocaleTimeString()}
-            </span>
-          </div>
-
-          <div className="flex justify-between">
-            <span className="text-slate-400">Duration:</span>
-            <span className="text-slate-200">{consent.duration}</span>
-          </div>
+        <div className="space-y-2 text-sm text-slate-300">
+          <Row label="Granted" value={new Date(consent.grantedAt).toLocaleString()} />
+          <Row label="Expires" value={<CountdownTimer expiresAt={consent.expiresAt} compact />} />
+          <Row
+            label="Signature"
+            value={
+              <span className="font-mono text-cyan-300">
+                Signed: {shorten(consent.patientSignature)}
+              </span>
+            }
+          />
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-400 mb-4 p-2 bg-slate-900/50 rounded">
-          <Lock className="w-3 h-3" />
-          <span>Signature verified • Non-repudiable</span>
-        </div>
+        {isActive ? (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-cyan-500/20 bg-cyan-950/30 px-3 py-2 text-xs text-cyan-200">
+            <ShieldCheck className="h-4 w-4" />
+            Secure session active
+          </div>
+        ) : null}
 
-        {showRevoke && !isRevoked && !isExpired && (
+        {showRevoke && isActive ? (
           <button
+            type="button"
             onClick={() => setShowConfirm(true)}
-            className="w-full px-3 py-2 text-sm bg-red-900/30 hover:bg-red-900/50 border border-red-500/30 text-red-100 rounded transition-colors flex items-center justify-center gap-2"
+            className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-950/30 px-4 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-950/50"
           >
-            <Trash2 className="w-4 h-4" />
-            Revoke Consent
+            <Trash2 className="h-4 w-4" />
+            Revoke Access
           </button>
-        )}
+        ) : null}
       </div>
 
-      {showConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-lg border border-red-500/50 p-6 max-w-sm">
-            <h3 className="text-lg font-bold text-red-100 mb-2">
-              Revoke Consent?
-            </h3>
-            <p className="text-sm text-slate-400 mb-4">
-              This will immediately terminate {requesterName}'s access to your
-              medical records.
-            </p>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="flex-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleRevoke}
-                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors font-semibold"
-              >
-                Revoke
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        title="Revoke Access"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowConfirm(false)}
+              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleRevoke}
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Revoke
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-slate-300">
+          Are you sure? This will immediately terminate access.
+        </p>
+      </Modal>
     </>
   )
+}
+
+function Row({
+  label,
+  value,
+}: {
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs uppercase tracking-wide text-slate-500">{label}</span>
+      <span className="text-right text-sm text-slate-200">{value}</span>
+    </div>
+  )
+}
+
+function shorten(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 16)}...` : value
 }

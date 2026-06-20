@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
-import { AlertTriangle, Shield } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { AlertTriangle } from 'lucide-react'
 import { useVault } from '@/hooks/useVault'
+import Modal from '@/components/ui/Modal'
 
 interface EmergencyAccessProps {
   patientId: string
@@ -10,119 +11,96 @@ interface EmergencyAccessProps {
 
 export function EmergencyAccess({ patientId }: EmergencyAccessProps) {
   const { vaultData, toggleEmergencyAccess } = useVault(patientId)
+  const [enabled, setEnabled] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
-  const [isEnabled, setIsEnabled] = useState(
-    vaultData?.emergencyAccessEnabled || false
-  )
+
+  useEffect(() => {
+    setEnabled(Boolean(vaultData?.emergencyAccessEnabled))
+  }, [vaultData])
 
   const handleToggle = () => {
-    if (!isEnabled) {
-      setShowConfirm(true)
-    } else {
-      toggleEmergencyAccess(false)
-      setIsEnabled(false)
+    if (enabled) {
+      void toggleEmergencyAccess(false)
+      setEnabled(false)
+      return
     }
+
+    setShowConfirm(true)
   }
 
-  const handleConfirm = () => {
-    toggleEmergencyAccess(true)
-    setIsEnabled(true)
+  const handleEnable = () => {
+    void toggleEmergencyAccess(true)
+    setEnabled(true)
     setShowConfirm(false)
   }
 
   return (
     <>
-      <div
-        className={`rounded-lg border p-4 transition-all ${
-          isEnabled
-            ? 'bg-red-900/30 border-red-500/50'
-            : 'border-slate-700 bg-slate-800'
-        }`}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3 flex-1">
-            {isEnabled ? (
-              <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5 animate-pulse" />
-            ) : (
-              <Shield className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" />
-            )}
-
+      <div className={`rounded-2xl border p-5 ${enabled ? 'border-rose-500/40 bg-rose-950/20' : 'border-slate-700 bg-slate-900/70'}`}>
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-xl p-2 ${enabled ? 'bg-rose-500/15 text-rose-300' : 'bg-slate-800 text-slate-300'}`}>
+              <AlertTriangle className="h-5 w-5" />
+            </div>
             <div>
-              <h3 className={`font-semibold ${isEnabled ? 'text-red-100' : 'text-slate-100'}`}>
-                Emergency Access
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                {isEnabled
-                  ? 'Emergency contacts can access your records during medical emergencies'
-                  : 'Allow emergency contacts to access your records during critical situations'}
+              <h3 className="text-base font-semibold text-slate-100">Emergency Access</h3>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
+                When enabled, any verified doctor can access your full medical history for 1 hour in emergencies.
+                All emergency access is logged immediately.
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={handleToggle}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors ${
-              isEnabled
-                ? 'bg-red-600'
-                : 'bg-slate-700'
+            className={`relative inline-flex h-7 w-14 items-center rounded-full border transition ${
+              enabled ? 'border-rose-500/40 bg-rose-500' : 'border-slate-600 bg-slate-700'
             }`}
           >
             <span
-              className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                isEnabled ? 'translate-x-5' : 'translate-x-0'
+              className={`inline-block h-5 w-5 transform rounded-full bg-white transition ${
+                enabled ? 'translate-x-7' : 'translate-x-1'
               }`}
             />
           </button>
         </div>
 
-        {isEnabled && (
-          <div className="mt-3 p-2 bg-red-900/50 rounded text-xs text-red-100 border border-red-500/20">
-            <p className="font-semibold mb-1">🚨 Emergency Mode Active</p>
-            <p>Authorized emergency contacts can decrypt and view your medical records without time-based consent.</p>
+        {enabled ? (
+          <div className="mt-4 rounded-xl border border-rose-500/30 bg-rose-950/35 px-4 py-3 text-sm text-rose-100">
+            <p className="font-semibold">Emergency Access is ACTIVE</p>
+            <p className="mt-1">Any verified doctor can access your records.</p>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {showConfirm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-slate-900 rounded-lg border border-red-500/50 p-6 max-w-sm mx-4">
-            <h3 className="text-lg font-bold text-red-100 mb-3 flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5" />
-              Enable Emergency Access?
-            </h3>
-
-            <p className="text-sm text-slate-300 mb-4">
-              This allows designated emergency contacts to access your complete medical records
-              without waiting for your consent, if you're unable to respond.
-            </p>
-
-            <div className="p-3 bg-slate-800 rounded text-xs text-slate-300 mb-4">
-              <p className="font-semibold text-slate-100 mb-1">What this means:</p>
-              <ul className="list-disc list-inside space-y-1">
-                <li>Authorized contacts bypass standard consent workflows</li>
-                <li>Access is logged in the immutable ledger</li>
-                <li>All access is still cryptographically protected</li>
-                <li>You can disable this anytime</li>
-              </ul>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="flex-1 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-100 rounded transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirm}
-                className="flex-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded transition-colors font-semibold"
-              >
-                Enable Emergency Access
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        title="Enable Emergency Access?"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setShowConfirm(false)}
+              className="rounded-xl border border-slate-700 bg-slate-800 px-4 py-2 text-sm text-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleEnable}
+              className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Confirm Enable
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm leading-6 text-slate-300">
+          This will allow ANY verified doctor to access your complete medical records for emergency purposes.
+        </p>
+      </Modal>
     </>
   )
 }

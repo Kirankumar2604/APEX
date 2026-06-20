@@ -109,7 +109,7 @@ export async function patientAuthorizeAccess(
       patientId,
       requesterId: request.requesterId,
       action: 'approved',
-    }).catch(console.error)
+    })
 
     return {
       consentId: consent.id,
@@ -187,7 +187,7 @@ export async function verifyAndGrantAccess(
       requesterId,
       action: 'viewed',
       dataAccessed: JSON.stringify(scopedData).substring(0, 100),
-    }).catch(console.error)
+    })
 
     return { isAuthorized: true, data: scopedData, reason: 'Access granted' }
   } catch (error) {
@@ -196,7 +196,7 @@ export async function verifyAndGrantAccess(
   }
 }
 
-export async function revokeCon sentAuthorization(
+export async function revokeConsentAuthorization(
   consentId: string,
   patientId: string
 ): Promise<void> {
