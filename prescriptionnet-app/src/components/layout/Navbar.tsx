@@ -87,6 +87,7 @@ export default function Navbar() {
       // Ignore auth logout errors.
     }
     localStorage.removeItem('prescriptionnet_currentUser')
+    sessionStorage.clear()
     router.push('/')
   }
 

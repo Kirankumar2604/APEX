@@ -8,22 +8,28 @@ import {
   FileText,
   Bell,
   AlertTriangle,
-  Activity
+  Activity,
+  Lock
 } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import StatCard from '@/components/dashboard/StatCard'
 import Card from '@/components/ui/Card'
 import Badge, { riskToBadgeVariant, statusToBadgeVariant } from '@/components/ui/Badge'
 import CountdownTimer from '@/components/dashboard/CountdownTimer'
-import { getVaultByPatientId, getSafetyByPatientId } from '@/data/mockData'
+import { getVaultByPatientId, getSafetyByPatientId, MOCK_USERS } from '@/data/mockData'
 import { getAccessRequests, getActiveConsents } from '@/lib/consent'
 import type { User, AccessRequest, Consent } from '@/types'
+import FingerprintModal from '@/components/crypto/FingerprintModal'
 
 export default function PatientDashboard() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [pendingRequests, setPendingRequests] = useState<AccessRequest[]>([])
   const [activeConsents, setActiveConsents] = useState<Consent[]>([])
+  const [biometricEnabled, setBiometricEnabled] = useState(false)
+  const [registeringBiometric, setRegisteringBiometric] = useState(false)
+  const [isSessionUnlocked, setIsSessionUnlocked] = useState(true)
+  const [triggerSessionScan, setTriggerSessionScan] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('prescriptionnet_currentUser')
@@ -35,9 +41,110 @@ export default function PatientDashboard() {
     // Load dynamically from localStorage
     setPendingRequests(getAccessRequests(user.id).filter(r => r.status === 'pending'))
     setActiveConsents(getActiveConsents(user.id))
+    
+    const bioEnabled = localStorage.getItem('prescriptionnet_biometric_2fa') === 'true' || 
+                       localStorage.getItem(`prescriptionnet_biometric_2fa_${user.id}`) === 'true'
+    setBiometricEnabled(bioEnabled)
+
+    const isVerified = sessionStorage.getItem(`prescriptionnet_biometric_verified_${user.id}`) === 'true'
+    if (bioEnabled && !isVerified) {
+      setIsSessionUnlocked(false)
+    } else {
+      setIsSessionUnlocked(true)
+    }
   }, [router])
 
+  const handleToggleBiometric = () => {
+    if (biometricEnabled) {
+      localStorage.setItem('prescriptionnet_biometric_2fa', 'false')
+      if (currentUser) {
+        localStorage.setItem(`prescriptionnet_biometric_2fa_${currentUser.id}`, 'false')
+      }
+      setBiometricEnabled(false)
+    } else {
+      setRegisteringBiometric(true)
+    }
+  }
+
   if (!currentUser) return null
+
+  if (!isSessionUnlocked) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f172a' }}>
+        <Navbar />
+        <main style={{ maxWidth: '600px', margin: '80px auto', padding: '0 24px' }}>
+          <Card
+            id="card-session-locked"
+            header={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock className="w-5 h-5 text-cyan-400" />
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>
+                  Sovereign Vault Locked
+                </span>
+              </div>
+            }
+          >
+            <div style={{ textAlign: 'center', padding: '24px 12px' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(6, 182, 212, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px'
+              }}>
+                <Lock className="w-8 h-8 text-cyan-400" />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
+                2FA Biometric Authentication Required
+              </h3>
+              <p style={{ fontSize: '14.5px', color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px' }}>
+                Your sovereign medical vault is locked with biometric 2FA. Scan your fingerprint to decrypt and access your records.
+              </p>
+              <button
+                onClick={() => {
+                  setTriggerSessionScan(true)
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '12px 24px',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                Scan Fingerprint to Unlock
+              </button>
+            </div>
+          </Card>
+        </main>
+
+        {(triggerSessionScan || true) && (
+          <FingerprintModal
+            mode="verify"
+            patientId={currentUser.id}
+            patientName={currentUser.name}
+            onSuccess={() => {
+              sessionStorage.setItem(`prescriptionnet_biometric_verified_${currentUser.id}`, 'true')
+              setIsSessionUnlocked(true)
+              setTriggerSessionScan(false)
+            }}
+            onCancel={() => {
+              localStorage.removeItem('prescriptionnet_currentUser')
+              sessionStorage.clear()
+              router.push('/')
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   const vault = getVaultByPatientId(currentUser.id)
   const safety = getSafetyByPatientId(currentUser.id)
@@ -312,8 +419,93 @@ export default function PatientDashboard() {
               </div>
             )}
           </Card>
+
+          {/* Security & 2FA Settings */}
+          <Card
+            header={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldCheck className="w-4 h-4" style={{ color: '#06b6d4' }} />
+                <span style={{ fontSize: '15px', fontWeight: 700, color: '#f1f5f9' }}>
+                  Security & 2FA Settings
+                </span>
+              </div>
+            }
+            id="card-security-settings"
+          >
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div>
+                  <p style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9' }}>Biometric Fingerprint 2FA</p>
+                  <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px', lineHeight: 1.4 }}>
+                    Require a fingerprint biometric scan before approving any access request.
+                  </p>
+                </div>
+                <button
+                  onClick={handleToggleBiometric}
+                  style={{
+                    background: biometricEnabled ? '#06b6d4' : '#1e293b',
+                    border: `1px solid ${biometricEnabled ? '#06b6d4' : '#334155'}`,
+                    borderRadius: '20px',
+                    width: '48px',
+                    height: '24px',
+                    position: 'relative',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    padding: 0
+                  }}
+                >
+                  <span
+                    style={{
+                      width: '18px',
+                      height: '18px',
+                      borderRadius: '50%',
+                      background: biometricEnabled ? '#0f172a' : '#94a3b8',
+                      position: 'absolute',
+                      top: '2px',
+                      left: biometricEnabled ? '26px' : '3px',
+                      transition: 'all 0.2s'
+                    }}
+                  />
+                </button>
+              </div>
+
+              {biometricEnabled && (
+                <div style={{
+                  padding: '10px 12px',
+                  borderRadius: '8px',
+                  background: 'rgba(6, 182, 212, 0.06)',
+                  border: '1px solid rgba(6, 182, 212, 0.15)',
+                  fontSize: '12px',
+                  color: '#22d3ee',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px'
+                }}>
+                  <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                  <span>Fingerprint biometric registered & active.</span>
+                </div>
+              )}
+            </div>
+          </Card>
+
         </div>
       </main>
+
+      {/* Biometric Scan Registration Modal */}
+      {registeringBiometric && (
+        <FingerprintModal
+          mode="register"
+          patientId={currentUser.id}
+          patientName={currentUser.name}
+          onSuccess={() => {
+            localStorage.setItem('prescriptionnet_biometric_2fa', 'true')
+            localStorage.setItem(`prescriptionnet_biometric_2fa_${currentUser.id}`, 'true')
+            setBiometricEnabled(true)
+            setRegisteringBiometric(false)
+          }}
+          onCancel={() => setRegisteringBiometric(false)}
+        />
+      )}
     </div>
   )
 }

@@ -9,6 +9,7 @@ import {
   CheckCircle,
   Clock,
   Filter,
+  Lock
 } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import Card from '@/components/ui/Card'
@@ -18,6 +19,7 @@ import { getAccessRequests, denyRequest } from '@/lib/consent'
 import type { User, AccessRequest } from '@/types'
 import SignatureVerifier from '@/components/crypto/SignatureVerifier'
 import { patientAuthorizeAccess } from '@/lib/cryptoIntegration'
+import FingerprintModal from '@/components/crypto/FingerprintModal'
 
 /* ============================================
    Patient — Access Requests Page
@@ -33,6 +35,10 @@ export default function PatientRequestsPage() {
   const [requests, setRequests] = useState<AccessRequest[]>([])
   const [filter, setFilter] = useState<FilterTab>('all')
   const [signingRequest, setSigningRequest] = useState<AccessRequest | null>(null)
+  const [biometricRequest, setBiometricRequest] = useState<AccessRequest | null>(null)
+  const [biometricEnabled, setBiometricEnabled] = useState(false)
+  const [isSessionUnlocked, setIsSessionUnlocked] = useState(true)
+  const [triggerSessionScan, setTriggerSessionScan] = useState(false)
 
   useEffect(() => {
     const stored = localStorage.getItem('prescriptionnet_currentUser')
@@ -41,6 +47,17 @@ export default function PatientRequestsPage() {
     if (user.role !== 'patient') { router.push('/'); return }
     setCurrentUser(user)
     loadRequests(user.id)
+    
+    const bioEnabled = localStorage.getItem('prescriptionnet_biometric_2fa') === 'true' || 
+                       localStorage.getItem(`prescriptionnet_biometric_2fa_${user.id}`) === 'true'
+    setBiometricEnabled(bioEnabled)
+
+    const isVerified = sessionStorage.getItem(`prescriptionnet_biometric_verified_${user.id}`) === 'true'
+    if (bioEnabled && !isVerified) {
+      setIsSessionUnlocked(false)
+    } else {
+      setIsSessionUnlocked(true)
+    }
   }, [router])
 
   const loadRequests = (patientId: string) => {
@@ -68,6 +85,84 @@ export default function PatientRequestsPage() {
   const activeCount = requests.filter(r => r.status === 'active').length
 
   if (!currentUser) return null
+
+  if (!isSessionUnlocked) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f172a' }}>
+        <Navbar />
+        <main style={{ maxWidth: '600px', margin: '80px auto', padding: '0 24px' }}>
+          <Card
+            id="card-session-locked"
+            header={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock className="w-5 h-5 text-cyan-400" />
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>
+                  Sovereign Vault Locked
+                </span>
+              </div>
+            }
+          >
+            <div style={{ textAlign: 'center', padding: '24px 12px' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(6, 182, 212, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px'
+              }}>
+                <Lock className="w-8 h-8 text-cyan-400" />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
+                2FA Biometric Authentication Required
+              </h3>
+              <p style={{ fontSize: '14.5px', color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px' }}>
+                Your sovereign medical vault is locked with biometric 2FA. Scan your fingerprint to decrypt and access your records.
+              </p>
+              <button
+                onClick={() => {
+                  setTriggerSessionScan(true)
+                }}
+                style={{
+                  background: 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '12px 24px',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                Scan Fingerprint to Unlock
+              </button>
+            </div>
+          </Card>
+        </main>
+
+        {(triggerSessionScan || true) && (
+          <FingerprintModal
+            mode="verify"
+            patientId={currentUser.id}
+            patientName={currentUser.name}
+            onSuccess={() => {
+              sessionStorage.setItem(`prescriptionnet_biometric_verified_${currentUser.id}`, 'true')
+              setIsSessionUnlocked(true)
+              setTriggerSessionScan(false)
+            }}
+            onCancel={() => {
+              localStorage.removeItem('prescriptionnet_currentUser')
+              sessionStorage.clear()
+              router.push('/')
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   const FILTER_TABS: { key: FilterTab; label: string; count?: number }[] = [
     { key: 'all', label: 'All', count: requests.length },
@@ -234,7 +329,13 @@ export default function PatientRequestsPage() {
                     <div style={{ display: 'flex', gap: '10px' }}>
                       <button
                         id={`authorize-${request.id}`}
-                        onClick={() => setSigningRequest(request)}
+                        onClick={() => {
+                          if (biometricEnabled) {
+                            setBiometricRequest(request)
+                          } else {
+                            setSigningRequest(request)
+                          }
+                        }}
                         style={{
                           flex: 1,
                           display: 'flex',
@@ -329,6 +430,20 @@ export default function PatientRequestsPage() {
             refreshRequests()
           }}
           onCancel={() => setSigningRequest(null)}
+        />
+      )}
+
+      {/* Biometric Scan Verification Modal */}
+      {biometricRequest && (
+        <FingerprintModal
+          mode="verify"
+          patientId={currentUser.id}
+          patientName={currentUser.name}
+          onSuccess={() => {
+            setSigningRequest(biometricRequest)
+            setBiometricRequest(null)
+          }}
+          onCancel={() => setBiometricRequest(null)}
         />
       )}
     </div>

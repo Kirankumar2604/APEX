@@ -21,6 +21,7 @@ import { MOCK_USERS, getAllUsers } from '@/data/mockData'
 import type { UserRole, User as UserType } from '@/types'
 import { hasKeyPair } from '@/lib/keystore'
 import KeypairSetup from '@/components/crypto/KeypairSetup'
+import FingerprintModal from '@/components/crypto/FingerprintModal'
 import { 
   auth, 
   googleProvider, 
@@ -90,6 +91,7 @@ export default function LoginPage() {
   const [showKeySetup, setShowKeySetup] = useState(false)
   const [loggedInUser, setLoggedInUser] = useState<UserType | null>(null)
   const [users, setUsers] = useState<UserType[]>([])
+  const [biometricLoginUser, setBiometricLoginUser] = useState<UserType | null>(null)
 
   // Firebase Auth states
   const [authTab, setAuthTab] = useState<'signin' | 'register' | 'mock'>('signin')
@@ -135,6 +137,28 @@ export default function LoginPage() {
     }
   }
 
+  const proceedWithLoginRedirect = (user: UserType) => {
+    if (!hasKeyPair(user.id)) {
+      setLoggedInUser(user)
+      setShowKeySetup(true)
+      setIsLoggingIn(false)
+    } else {
+      redirectUser(user)
+    }
+  }
+
+  const checkBiometricAndRedirect = (user: UserType) => {
+    const isBiometricActive = localStorage.getItem(`prescriptionnet_biometric_2fa_${user.id}`) === 'true' || 
+                             (user.role === 'patient' && localStorage.getItem('prescriptionnet_biometric_2fa') === 'true')
+    
+    if (isBiometricActive) {
+      setBiometricLoginUser(user)
+      setIsLoggingIn(false)
+    } else {
+      proceedWithLoginRedirect(user)
+    }
+  }
+
   const handleLogin = () => {
     if (!selectedUserId) return
     const user = users.find(u => u.id === selectedUserId)
@@ -144,13 +168,7 @@ export default function LoginPage() {
     localStorage.setItem('prescriptionnet_currentUser', JSON.stringify(user))
 
     setTimeout(() => {
-      if (!hasKeyPair(user.id)) {
-        setLoggedInUser(user)
-        setShowKeySetup(true)
-        setIsLoggingIn(false)
-      } else {
-        redirectUser(user)
-      }
+      checkBiometricAndRedirect(user)
     }, 800)
   }
 
@@ -205,13 +223,7 @@ export default function LoginPage() {
       localStorage.setItem('prescriptionnet_currentUser', JSON.stringify(userObj))
 
       setTimeout(() => {
-        if (!hasKeyPair(userObj!.id)) {
-          setLoggedInUser(userObj!)
-          setShowKeySetup(true)
-          setIsLoggingIn(false)
-        } else {
-          redirectUser(userObj!)
-        }
+        checkBiometricAndRedirect(userObj!)
       }, 800)
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Google Sign-In failed.'
@@ -275,13 +287,7 @@ export default function LoginPage() {
       localStorage.setItem('prescriptionnet_currentUser', JSON.stringify(userObj))
 
       setTimeout(() => {
-        if (!hasKeyPair(userObj!.id)) {
-          setLoggedInUser(userObj!)
-          setShowKeySetup(true)
-          setIsLoggingIn(false)
-        } else {
-          redirectUser(userObj!)
-        }
+        checkBiometricAndRedirect(userObj!)
       }, 800)
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : 'Email Sign In failed.'
@@ -847,6 +853,25 @@ export default function LoginPage() {
           onComplete={() => {
             setShowKeySetup(false)
             redirectUser(loggedInUser)
+          }}
+        />
+      )}
+
+      {/* Biometric Login Verification Modal */}
+      {biometricLoginUser && (
+        <FingerprintModal
+          mode="verify"
+          patientId={biometricLoginUser.id}
+          patientName={biometricLoginUser.name}
+          onSuccess={() => {
+            const userToRedirect = biometricLoginUser
+            setBiometricLoginUser(null)
+            sessionStorage.setItem(`prescriptionnet_biometric_verified_${userToRedirect.id}`, 'true')
+            proceedWithLoginRedirect(userToRedirect)
+          }}
+          onCancel={() => {
+            setBiometricLoginUser(null)
+            localStorage.removeItem('prescriptionnet_currentUser')
           }}
         />
       )}
