@@ -122,3 +122,47 @@ export interface FraudAnalysis {
   summary: string
   disclaimer: string
 }
+
+export interface AuditEntry {
+  id: string
+  consentId: string
+  patientId: string
+  requesterId: string
+  action: 'requested' | 'approved' | 'denied' | 'viewed' | 'revoked' | 'expired'
+  dataAccessed?: string
+  timestamp: string
+}
+
+export interface SecureSession {
+  sessionId: string
+  consentId: string
+  requesterId: string
+  patientId: string
+  encryptedSessionKey: string
+  encryptedPayload?: string
+  expiresAt: string
+  isActive: boolean
+  createdAt: string
+}
+
+export interface AuditEntry {
+  id: string
+  consentId: string
+  patientId: string
+  requesterId: string
+  action: 'requested' | 'approved' | 'denied' | 'viewed' | 'revoked' | 'expired'
+  dataAccessed?: string
+  timestamp: string
+}
+
+export interface SecureSession {
+  sessionId: string
+  consentId: string
+  requesterId: string
+  patientId: string
+  encryptedSessionKey: string
+  encryptedPayload?: string
+  expiresAt: string
+  isActive: boolean
+  createdAt: string
+}
