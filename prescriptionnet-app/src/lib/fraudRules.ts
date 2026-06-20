@@ -212,7 +212,7 @@ export function calculateRuleBasedScore(flags: FraudFlag[]): number {
 }
 
 export function combineFraudResults(ruleFlags: FraudFlag[], aiAnalysis: FraudAnalysis, ruleScore: number): FraudAnalysis {
-  const combinedScore = Math.min(100, Math.round((ruleScore + aiAnalysis.fraudRiskScore) / 2))
+  const combinedScore = Math.min(100, Math.max(ruleScore, aiAnalysis.fraudRiskScore))
   const aiFlags = aiAnalysis.flags.map((flag) => ({ ...flag, detectedBy: flag.detectedBy === 'rule' ? 'ai' : flag.detectedBy }))
 
   return {
