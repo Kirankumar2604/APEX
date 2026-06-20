@@ -16,7 +16,9 @@ import {
   Zap
 } from 'lucide-react'
 import { MOCK_USERS } from '@/data/mockData'
-import type { UserRole } from '@/types'
+import type { UserRole, User as UserType } from '@/types'
+import { hasKeyPair } from '@/lib/keystore'
+import KeypairSetup from '@/components/crypto/KeypairSetup'
 
 /* ============================================
    FILE 3: Login Page — Full-screen dark landing
@@ -76,6 +78,8 @@ export default function LoginPage() {
   const [isLoggingIn, setIsLoggingIn] = useState(false)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [showKeySetup, setShowKeySetup] = useState(false)
+  const [loggedInUser, setLoggedInUser] = useState<UserType | null>(null)
 
   useEffect(() => {
     setMounted(true)
@@ -87,6 +91,20 @@ export default function LoginPage() {
 
   const filteredUsers = MOCK_USERS.filter(u => u.role === selectedRole)
 
+  const redirectUser = (user: UserType) => {
+    switch (user.role) {
+      case 'patient':
+        router.push('/patient')
+        break
+      case 'doctor':
+        router.push('/doctor')
+        break
+      case 'requester':
+        router.push('/requester')
+        break
+    }
+  }
+
   const handleLogin = () => {
     if (!selectedUserId) return
     const user = MOCK_USERS.find(u => u.id === selectedUserId)
@@ -96,16 +114,12 @@ export default function LoginPage() {
     localStorage.setItem('prescriptionnet_currentUser', JSON.stringify(user))
 
     setTimeout(() => {
-      switch (user.role) {
-        case 'patient':
-          router.push('/patient')
-          break
-        case 'doctor':
-          router.push('/doctor')
-          break
-        case 'requester':
-          router.push('/requester')
-          break
+      if (!hasKeyPair(user.id)) {
+        setLoggedInUser(user)
+        setShowKeySetup(true)
+        setIsLoggingIn(false)
+      } else {
+        redirectUser(user)
       }
     }, 800)
   }
@@ -382,6 +396,17 @@ export default function LoginPage() {
           </p>
         </div>
       </footer>
+
+      {/* Keypair Setup Overlay */}
+      {showKeySetup && loggedInUser && (
+        <KeypairSetup
+          userId={loggedInUser.id}
+          onComplete={() => {
+            setShowKeySetup(false)
+            redirectUser(loggedInUser)
+          }}
+        />
+      )}
     </div>
   )
 }
