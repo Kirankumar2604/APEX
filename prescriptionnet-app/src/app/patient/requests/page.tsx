@@ -13,7 +13,8 @@ import {
 import Navbar from '@/components/layout/Navbar'
 import Card from '@/components/ui/Card'
 import Badge, { statusToBadgeVariant } from '@/components/ui/Badge'
-import { MOCK_USERS, MOCK_ACCESS_REQUESTS } from '@/data/mockData'
+import { getAllUsers } from '@/data/mockData'
+import { getAccessRequests, denyRequest } from '@/lib/consent'
 import type { User, AccessRequest } from '@/types'
 import SignatureVerifier from '@/components/crypto/SignatureVerifier'
 import { patientAuthorizeAccess } from '@/lib/cryptoIntegration'
@@ -43,17 +44,7 @@ export default function PatientRequestsPage() {
   }, [router])
 
   const loadRequests = (patientId: string) => {
-    // Load from localStorage first (persisted), then fall back to mock
-    const storedRequests = localStorage.getItem('prescriptionnet_requests')
-    if (storedRequests) {
-      const all: AccessRequest[] = JSON.parse(storedRequests)
-      setRequests(all.filter(r => r.patientId === patientId))
-    } else {
-      const filtered = MOCK_ACCESS_REQUESTS.filter(r => r.patientId === patientId)
-      setRequests(filtered)
-      // Persist mock data
-      localStorage.setItem('prescriptionnet_requests', JSON.stringify(MOCK_ACCESS_REQUESTS))
-    }
+    setRequests(getAccessRequests(patientId))
   }
 
   const refreshRequests = () => {
@@ -61,20 +52,15 @@ export default function PatientRequestsPage() {
   }
 
   const handleDeny = (requestId: string) => {
-    const storedRequests: AccessRequest[] = JSON.parse(
-      localStorage.getItem('prescriptionnet_requests') || '[]'
-    )
-    const idx = storedRequests.findIndex(r => r.id === requestId)
-    if (idx !== -1) {
-      storedRequests[idx].status = 'expired'
-      localStorage.setItem('prescriptionnet_requests', JSON.stringify(storedRequests))
+    if (currentUser) {
+      denyRequest(requestId, currentUser.id)
       refreshRequests()
     }
   }
 
   const filteredRequests = requests.filter(r => {
     if (filter === 'all') return true
-    if (filter === 'denied') return r.status === 'expired'
+    if (filter === 'denied') return r.status === 'revoked' || r.status === 'expired'
     return r.status === filter
   })
 
@@ -173,10 +159,10 @@ export default function PatientRequestsPage() {
             </Card>
           ) : (
             filteredRequests.map((request) => {
-              const requester = MOCK_USERS.find(u => u.id === request.requesterId)
+              const requester = getAllUsers().find(u => u.id === request.requesterId)
               const isPending = request.status === 'pending'
               const isActive = request.status === 'active'
-              const isDenied = request.status === 'expired'
+              const isDenied = request.status === 'revoked' || request.status === 'expired'
 
               return (
                 <div

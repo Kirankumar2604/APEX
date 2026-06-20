@@ -15,12 +15,15 @@ import StatCard from '@/components/dashboard/StatCard'
 import Card from '@/components/ui/Card'
 import Badge, { riskToBadgeVariant, statusToBadgeVariant } from '@/components/ui/Badge'
 import CountdownTimer from '@/components/dashboard/CountdownTimer'
-import { MOCK_USERS, MOCK_ACCESS_REQUESTS, MOCK_CONSENTS, getVaultByPatientId, getSafetyByPatientId } from '@/data/mockData'
-import type { User } from '@/types'
+import { getVaultByPatientId, getSafetyByPatientId } from '@/data/mockData'
+import { getAccessRequests, getActiveConsents } from '@/lib/consent'
+import type { User, AccessRequest, Consent } from '@/types'
 
 export default function PatientDashboard() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [pendingRequests, setPendingRequests] = useState<AccessRequest[]>([])
+  const [activeConsents, setActiveConsents] = useState<Consent[]>([])
 
   useEffect(() => {
     const stored = localStorage.getItem('prescriptionnet_currentUser')
@@ -28,18 +31,16 @@ export default function PatientDashboard() {
     const user = JSON.parse(stored)
     if (user.role !== 'patient') { router.push('/'); return }
     setCurrentUser(user)
+
+    // Load dynamically from localStorage
+    setPendingRequests(getAccessRequests(user.id).filter(r => r.status === 'pending'))
+    setActiveConsents(getActiveConsents(user.id))
   }, [router])
 
   if (!currentUser) return null
 
   const vault = getVaultByPatientId(currentUser.id)
   const safety = getSafetyByPatientId(currentUser.id)
-  const pendingRequests = MOCK_ACCESS_REQUESTS.filter(
-    r => r.patientId === currentUser.id && r.status === 'pending'
-  )
-  const activeConsents = MOCK_CONSENTS.filter(
-    c => c.patientId === currentUser.id && c.status === 'active'
-  )
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f172a' }}>

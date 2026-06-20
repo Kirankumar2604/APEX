@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CheckCircle2, Search } from 'lucide-react'
 import type { ConsentDuration, ConsentPurpose, ConsentScope } from '@/types'
 import { getPatients, getUserById } from '@/lib/mockData'
@@ -10,6 +10,7 @@ interface AccessRequestFormProps {
   requesterId: string
   requesterName: string
   requesterRole: string
+  initialPatientId?: string
   onSubmitted: () => void
 }
 
@@ -34,12 +35,13 @@ export function AccessRequestForm({
   requesterId,
   requesterName,
   requesterRole,
+  initialPatientId = '',
   onSubmitted,
 }: AccessRequestFormProps) {
   const { submitRequest } = useConsent(undefined, requesterId)
   const patients = useMemo(() => getPatients(), [])
   const [formData, setFormData] = useState({
-    patientId: '',
+    patientId: initialPatientId,
     purpose: 'Consultation' as ConsentPurpose,
     scope: 'Prescriptions Only' as ConsentScope,
     duration: '24 Hours' as ConsentDuration,
@@ -47,6 +49,12 @@ export function AccessRequestForm({
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [successMessage, setSuccessMessage] = useState('')
+
+  useEffect(() => {
+    if (initialPatientId) {
+      setFormData((prev) => ({ ...prev, patientId: initialPatientId }))
+    }
+  }, [initialPatientId])
 
   const selectedPatient = getUserById(formData.patientId)
 

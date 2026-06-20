@@ -6,18 +6,62 @@ import {
   ClipboardList,
   Search,
   CheckCircle,
-  Clock
+  Clock,
+  AlertCircle,
+  CheckCircle2,
+  Lock,
+  Pill,
+  FileText
 } from 'lucide-react'
 import Navbar from '@/components/layout/Navbar'
 import StatCard from '@/components/dashboard/StatCard'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
-import { MOCK_ACCESS_REQUESTS, ALL_VAULTS } from '@/data/mockData'
-import type { User } from '@/types'
+import { 
+  getAllVaults, 
+  getUserById 
+} from '@/data/mockData'
+import { 
+  getAccessRequests, 
+  getConsentForRequester, 
+  submitAccessRequest 
+} from '@/lib/consent'
+import type { 
+  User, 
+  PatientVault, 
+  AccessRequest,
+  ConsentPurpose,
+  ConsentScope,
+  ConsentDuration,
+  Consent
+} from '@/types'
 
 export default function RequesterDashboard() {
   const router = useRouter()
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+
+  // Dynamic states from localStorage
+  const [vaults, setVaults] = useState<PatientVault[]>([])
+  const [myRequests, setMyRequests] = useState<AccessRequest[]>([])
+
+  // Search states
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResult, setSearchResult] = useState<{
+    patientId: string
+    patientName: string
+    hasConsent: boolean
+    hasPendingRequest: boolean
+    activeConsent: Consent | null
+    vault: PatientVault | null
+  } | null>(null)
+  const [searchError, setSearchError] = useState('')
+
+  // Request form states
+  const [requestPurpose, setRequestPurpose] = useState<ConsentPurpose>('Consultation')
+  const [requestScope, setRequestScope] = useState<ConsentScope>('Prescriptions Only')
+  const [requestDuration, setRequestDuration] = useState<ConsentDuration>('24 Hours')
+  const [requestMessage, setRequestMessage] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
 
   useEffect(() => {
     const stored = localStorage.getItem('prescriptionnet_currentUser')
@@ -25,18 +69,79 @@ export default function RequesterDashboard() {
     const user = JSON.parse(stored)
     if (user.role !== 'requester') { router.push('/'); return }
     setCurrentUser(user)
+
+    // Load initial values from localStorage
+    setVaults(getAllVaults())
+    setMyRequests(getAccessRequests(undefined, user.id))
   }, [router])
 
   if (!currentUser) return null
 
-  const myRequests = MOCK_ACCESS_REQUESTS.filter(r => r.requesterId === currentUser.id)
   const pendingRequests = myRequests.filter(r => r.status === 'pending')
   const activeRequests = myRequests.filter(r => r.status === 'active')
+
+  const handleSearch = () => {
+    setSearchError('')
+    setSearchResult(null)
+    setSuccessMessage('')
+
+    const query = searchQuery.trim()
+    if (!query) {
+      setSearchError('Please enter a patient ID.')
+      return
+    }
+
+    const patientUser = getUserById(query)
+    if (!patientUser || patientUser.role !== 'patient') {
+      setSearchError(`No patient found with ID "${query}".`)
+      return
+    }
+
+    const activeConsent = getConsentForRequester(patientUser.id, currentUser.id)
+    const requests = getAccessRequests(patientUser.id, currentUser.id)
+    const hasPending = requests.some(r => r.status === 'pending')
+    const vault = getAllVaults().find(v => v.patientId === patientUser.id) || null
+
+    setSearchResult({
+      patientId: patientUser.id,
+      patientName: patientUser.name,
+      hasConsent: !!activeConsent,
+      hasPendingRequest: hasPending,
+      activeConsent,
+      vault
+    })
+  }
+
+  const handleSendRequest = () => {
+    if (!searchResult) return
+
+    submitAccessRequest({
+      requesterId: currentUser.id,
+      requesterName: currentUser.name,
+      requesterRole: currentUser.role,
+      patientId: searchResult.patientId,
+      purpose: requestPurpose,
+      scope: requestScope,
+      duration: requestDuration,
+      message: requestMessage.trim() || undefined
+    })
+
+    setSuccessMessage('Access request submitted. Awaiting patient approval.')
+    
+    // Refresh lists
+    setMyRequests(getAccessRequests(undefined, currentUser.id))
+    
+    // Reset form states
+    setRequestMessage('')
+    setSearchResult(prev => prev ? { ...prev, hasPendingRequest: true } : null)
+  }
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f172a' }}>
       <Navbar />
       <main style={{ maxWidth: '1400px', margin: '0 auto', padding: '32px 24px' }}>
+        
+        {/* Header Greeting */}
         <div className="animate-fade-in" style={{ marginBottom: '32px' }}>
           <h1 style={{ fontSize: '28px', fontWeight: 800, color: '#f1f5f9', marginBottom: '4px' }}>
             Requester Portal
@@ -46,6 +151,333 @@ export default function RequesterDashboard() {
           </p>
         </div>
 
+        {/* Search Patient strictly by ID */}
+        <Card
+          id="requester-search-card"
+          header={
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Search className="w-4 h-4 text-cyan-400" />
+              <span style={{ fontSize: '15px', fontWeight: 700, color: '#f1f5f9' }}>
+                Search Patient by ID
+              </span>
+            </div>
+          }
+          style={{ marginBottom: '32px' }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <p style={{ fontSize: '14px', color: '#94a3b8' }}>
+              Search for a patient by their unique ID to check active credentials or request new access.
+            </p>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSearch() }}
+                placeholder="Search by Patient ID only (e.g., patient-001)"
+                style={{
+                  flex: 1,
+                  background: '#0f172a',
+                  border: '1px solid #334155',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  color: '#f1f5f9',
+                  fontSize: '14px',
+                  outline: 'none',
+                  transition: 'border-color 0.2s'
+                }}
+              />
+              <button
+                onClick={handleSearch}
+                style={{
+                  background: '#06b6d4',
+                  color: '#0f172a',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '0 24px',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s'
+                }}
+              >
+                Search
+              </button>
+            </div>
+
+            {searchResult && (
+              <div
+                style={{
+                  padding: '18px',
+                  borderRadius: '14px',
+                  background: 'rgba(15, 23, 42, 0.4)',
+                  border: `1px solid ${searchResult.hasConsent ? '#22c55e' : searchResult.hasPendingRequest ? '#eab308' : '#334155'}`,
+                  marginTop: '8px'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <div>
+                    <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>
+                      {searchResult.patientName}
+                    </h3>
+                    <p style={{ fontSize: '12px', color: '#64748b' }}>Patient ID: {searchResult.patientId}</p>
+                  </div>
+                  <Badge
+                    variant={searchResult.hasConsent ? 'success' : searchResult.hasPendingRequest ? 'warning' : 'neutral'}
+                    dot
+                  >
+                    {searchResult.hasConsent ? 'Authorized Access' : searchResult.hasPendingRequest ? 'Access Pending' : 'No Consent'}
+                  </Badge>
+                </div>
+
+                {searchResult.hasConsent && searchResult.activeConsent && searchResult.vault ? (
+                  <div style={{ borderTop: '1px solid #1e293b', paddingTop: '16px', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                      <Badge variant="info" size="sm">Purpose: {searchResult.activeConsent.purpose}</Badge>
+                      <Badge variant="success" size="sm">Scope: {searchResult.activeConsent.scope}</Badge>
+                    </div>
+
+                    <h4 style={{ fontSize: '14px', fontWeight: 700, color: '#f1f5f9', marginBottom: '12px' }}>
+                      Authorized Health Data
+                    </h4>
+
+                    {/* Prescriptions Scope */}
+                    {(searchResult.activeConsent.scope === 'Prescriptions Only' || searchResult.activeConsent.scope === 'Full Medical History') && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <h5 style={{ fontSize: '12px', color: '#3b82f6', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                          <Pill className="w-3.5 h-3.5" /> Prescriptions
+                        </h5>
+                        {searchResult.vault.prescriptions.length === 0 ? (
+                          <p style={{ fontSize: '12px', color: '#64748b' }}>No prescriptions found.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {searchResult.vault.prescriptions.map((rx) => (
+                              <div key={rx.id} style={{ background: '#0f172a', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                                <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>{rx.drugName}</p>
+                                <p style={{ fontSize: '12px', color: '#94a3b8' }}>{rx.dosage} • {rx.frequency}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Lab Reports Scope */}
+                    {(searchResult.activeConsent.scope === 'Lab Reports Only' || searchResult.activeConsent.scope === 'Full Medical History') && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <h5 style={{ fontSize: '12px', color: '#a855f7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                          <FileText className="w-3.5 h-3.5" /> Lab Reports
+                        </h5>
+                        {searchResult.vault.labReports.length === 0 ? (
+                          <p style={{ fontSize: '12px', color: '#64748b' }}>No lab reports found.</p>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            {searchResult.vault.labReports.map((lab) => (
+                              <div key={lab.id} style={{ background: '#0f172a', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                  <p style={{ fontSize: '13px', fontWeight: 600, color: '#f1f5f9' }}>{lab.testName}</p>
+                                  <Badge variant={lab.isAbnormal ? 'danger' : 'success'} size="sm">{lab.result}</Badge>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Allergies Scope */}
+                    {(searchResult.activeConsent.scope === 'Allergies Only' || searchResult.activeConsent.scope === 'Full Medical History') && (
+                      <div>
+                        <h5 style={{ fontSize: '12px', color: '#f97316', fontWeight: 600, marginBottom: '8px' }}>Allergies</h5>
+                        {searchResult.vault.allergies.length === 0 ? (
+                          <p style={{ fontSize: '12px', color: '#64748b' }}>No allergies reported.</p>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            {searchResult.vault.allergies.map((allergy) => (
+                              <Badge key={allergy} variant="danger" size="sm">{allergy}</Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div>
+                    <p style={{ fontSize: '13.5px', color: '#94a3b8', marginBottom: '14px' }}>
+                      {searchResult.hasPendingRequest
+                        ? 'An access request has already been sent to this patient and is pending approval.'
+                        : 'Access is unauthorized. Submit a signature-verified consent request to access the patient\'s health records.'}
+                    </p>
+                    
+                    {successMessage && (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        background: 'rgba(34, 197, 94, 0.1)',
+                        border: '1px solid rgba(34, 197, 94, 0.2)',
+                        borderRadius: '10px',
+                        padding: '10px 14px',
+                        color: '#4ade80',
+                        fontSize: '13px',
+                        marginBottom: '14px'
+                      }}>
+                        <CheckCircle2 className="w-4 h-4" />
+                        {successMessage}
+                      </div>
+                    )}
+
+                    {!searchResult.hasPendingRequest && (
+                      <div
+                        style={{
+                          borderTop: '1px solid #1e293b',
+                          paddingTop: '16px',
+                          marginTop: '12px'
+                        }}
+                      >
+                        <h4 style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9', marginBottom: '14px' }}>
+                          Request Access Configuration
+                        </h4>
+                        
+                        <div style={{ display: 'grid', gap: '12px', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '16px' }}>
+                          <div>
+                            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Purpose *</label>
+                            <select
+                              value={requestPurpose}
+                              onChange={(e) => setRequestPurpose(e.target.value as ConsentPurpose)}
+                              style={{
+                                width: '100%',
+                                background: '#0f172a',
+                                border: '1px solid #334155',
+                                borderRadius: '8px',
+                                padding: '10px',
+                                color: '#f1f5f9',
+                                fontSize: '13px',
+                                outline: 'none'
+                              }}
+                            >
+                              <option value="Consultation">Consultation</option>
+                              <option value="Emergency">Emergency</option>
+                              <option value="Prescription Refill">Prescription Refill</option>
+                              <option value="Insurance Claim">Insurance Claim</option>
+                              <option value="Lab Review">Lab Review</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Data Scope *</label>
+                            <select
+                              value={requestScope}
+                              onChange={(e) => setRequestScope(e.target.value as ConsentScope)}
+                              style={{
+                                width: '100%',
+                                background: '#0f172a',
+                                border: '1px solid #334155',
+                                borderRadius: '8px',
+                                padding: '10px',
+                                color: '#f1f5f9',
+                                fontSize: '13px',
+                                outline: 'none'
+                              }}
+                            >
+                              <option value="Prescriptions Only">Prescriptions Only</option>
+                              <option value="Lab Reports Only">Lab Reports Only</option>
+                              <option value="Full Medical History">Full Medical History</option>
+                              <option value="Allergies Only">Allergies Only</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Duration *</label>
+                            <select
+                              value={requestDuration}
+                              onChange={(e) => setRequestDuration(e.target.value as ConsentDuration)}
+                              style={{
+                                width: '100%',
+                                background: '#0f172a',
+                                border: '1px solid #334155',
+                                borderRadius: '8px',
+                                padding: '10px',
+                                color: '#f1f5f9',
+                                fontSize: '13px',
+                                outline: 'none'
+                              }}
+                            >
+                              <option value="1 Hour">1 Hour</option>
+                              <option value="24 Hours">24 Hours</option>
+                              <option value="7 Days">7 Days</option>
+                              <option value="One-Time">One-Time</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        <div style={{ marginBottom: '16px' }}>
+                          <label style={{ fontSize: '12px', color: '#94a3b8', display: 'block', marginBottom: '6px' }}>Message (Optional)</label>
+                          <textarea
+                            value={requestMessage}
+                            onChange={(e) => setRequestMessage(e.target.value)}
+                            placeholder="Reason for requesting data (optional)"
+                            rows={3}
+                            style={{
+                              width: '100%',
+                              background: '#0f172a',
+                              border: '1px solid #334155',
+                              borderRadius: '8px',
+                              padding: '10px 12px',
+                              color: '#f1f5f9',
+                              fontSize: '13px',
+                              outline: 'none',
+                              resize: 'vertical'
+                            }}
+                          />
+                        </div>
+
+                        <button
+                          onClick={handleSendRequest}
+                          style={{
+                            background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '10px',
+                            padding: '12px 24px',
+                            fontWeight: 600,
+                            fontSize: '13.5px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s',
+                            width: '100%',
+                            boxShadow: '0 4px 12px rgba(6, 182, 212, 0.2)'
+                          }}
+                        >
+                          Submit Access Request
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {searchError && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '12px 16px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.15)',
+                  color: '#fca5a5',
+                  fontSize: '13px',
+                  marginTop: '8px'
+                }}
+              >
+                <AlertCircle className="w-4 h-4" />
+                {searchError}
+              </div>
+            )}
+          </div>
+        </Card>
+
+        {/* Stats Grid */}
         <div
           className="animate-fade-in"
           style={{
@@ -79,12 +511,13 @@ export default function RequesterDashboard() {
           <StatCard
             icon={<Search className="w-5 h-5" />}
             label="Available Patients"
-            value={ALL_VAULTS.length}
+            value={vaults.length}
             color="blue"
             id="stat-available-patients"
           />
         </div>
 
+        {/* Content Layout */}
         <div
           style={{
             display: 'grid',
@@ -110,7 +543,7 @@ export default function RequesterDashboard() {
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {myRequests.map(req => {
-                  const vault = ALL_VAULTS.find(v => v.patientId === req.patientId)
+                  const vault = vaults.find(v => v.patientId === req.patientId)
                   return (
                     <div
                       key={req.id}
@@ -157,3 +590,4 @@ export default function RequesterDashboard() {
     </div>
   )
 }
+

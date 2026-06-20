@@ -7,7 +7,8 @@ import Navbar from '@/components/layout/Navbar'
 import Card from '@/components/ui/Card'
 import Badge from '@/components/ui/Badge'
 import Button from '@/components/ui/Button'
-import { ALL_VAULTS, MOCK_ACCESS_REQUESTS } from '@/data/mockData'
+import { getVaultByPatientId } from '@/data/mockData'
+import { getConsentForRequester } from '@/lib/consent'
 import { useAI } from '@/hooks/useAI'
 import SafetyAgentResults from '@/components/ai/SafetyAgentResults'
 import FraudDetectionResults from '@/components/ai/FraudDetectionResults'
@@ -50,7 +51,7 @@ export default function PatientRecordsPage() {
     }
     setCurrentUser(user)
 
-    const patientVault = ALL_VAULTS.find((v) => v.patientId === patientId)
+    const patientVault = getVaultByPatientId(patientId)
     if (!patientVault) {
       router.push('/doctor')
       return
@@ -60,7 +61,7 @@ export default function PatientRecordsPage() {
 
   if (!currentUser || !vault) return null
 
-  const consent = MOCK_ACCESS_REQUESTS.find((r) => r.patientId === patientId && r.requesterId === currentUser.id && r.status === 'active')
+  const consent = getConsentForRequester(patientId, currentUser.id)
 
   const tabStyle = (isActive: boolean) => ({
     padding: '12px 16px',
