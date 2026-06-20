@@ -1,8 +1,11 @@
+<<<<<<< HEAD
 /**
  * PrescriptionNet — Cryptographic Keystore
  * Manages ECDSA + ECDH key pairs in localStorage
  */
 
+=======
+>>>>>>> 3a501849fe490e808d9b43c89869e5bdbc8b78d9
 import {
   generateECDSAKeyPair,
   generateECDHKeyPair,
@@ -12,6 +15,7 @@ import {
   importECDSAPrivateKey,
   importECDHPublicKey,
   importECDHPrivateKey,
+<<<<<<< HEAD
 } from '@/lib/crypto'
 
 // ═══════════════════════════════════════════════════════
@@ -23,10 +27,21 @@ export interface StoredKeyPair {
   ecdsaPrivateKey: string  // JWK JSON string
   ecdhPublicKey: string    // JWK JSON string
   ecdhPrivateKey: string   // JWK JSON string
+=======
+  sha256Hash,
+} from './crypto'
+
+interface StoredKeyPair {
+  ecdsaPublicKey: string
+  ecdsaPrivateKey: string
+  ecdhPublicKey: string
+  ecdhPrivateKey: string
+>>>>>>> 3a501849fe490e808d9b43c89869e5bdbc8b78d9
   userId: string
   createdAt: string
 }
 
+<<<<<<< HEAD
 // ═══════════════════════════════════════════════════════
 // KEY GENERATION & STORAGE
 // ═══════════════════════════════════════════════════════
@@ -51,6 +66,40 @@ export async function generateAndStoreKeyPair(
 
     // Build stored structure
     const stored: StoredKeyPair = {
+=======
+export async function generateAndStoreKeyPair(userId: string): Promise<{
+  ecdsaPublicKeyJWK: string
+  ecdhPublicKeyJWK: string
+}> {
+  if (typeof window === 'undefined') {
+    throw new Error('Keystore requires browser context')
+  }
+
+  try {
+    // Check if already exists
+    if (hasKeyPair(userId)) {
+      const stored = getStoredKeyPair(userId)
+      if (stored) {
+        return {
+          ecdsaPublicKeyJWK: stored.ecdsaPublicKey,
+          ecdhPublicKeyJWK: stored.ecdhPublicKey,
+        }
+      }
+    }
+
+    // Generate ECDSA keys
+    const ecdsaKeyPair = await generateECDSAKeyPair()
+    const ecdsaPublicKeyJWK = await exportPublicKeyToJWK(ecdsaKeyPair.publicKey)
+    const ecdsaPrivateKeyJWK = await exportPrivateKeyToJWK(ecdsaKeyPair.privateKey)
+
+    // Generate ECDH keys
+    const ecdhKeyPair = await generateECDHKeyPair()
+    const ecdhPublicKeyJWK = await exportPublicKeyToJWK(ecdhKeyPair.publicKey)
+    const ecdhPrivateKeyJWK = await exportPrivateKeyToJWK(ecdhKeyPair.privateKey)
+
+    // Store
+    const storedKeyPair: StoredKeyPair = {
+>>>>>>> 3a501849fe490e808d9b43c89869e5bdbc8b78d9
       ecdsaPublicKey: ecdsaPublicKeyJWK,
       ecdsaPrivateKey: ecdsaPrivateKeyJWK,
       ecdhPublicKey: ecdhPublicKeyJWK,
@@ -59,6 +108,7 @@ export async function generateAndStoreKeyPair(
       createdAt: new Date().toISOString(),
     }
 
+<<<<<<< HEAD
     // Persist to localStorage
     localStorage.setItem(`keypair_${userId}`, JSON.stringify(stored))
 
@@ -152,10 +202,98 @@ export function getStoredKeyPair(userId: string): StoredKeyPair | null {
   try {
     return JSON.parse(raw) as StoredKeyPair
   } catch {
+=======
+    localStorage.setItem(`keypair_${userId}`, JSON.stringify(storedKeyPair))
+
+    return {
+      ecdsaPublicKeyJWK,
+      ecdhPublicKeyJWK,
+    }
+  } catch (error) {
+    console.error('Failed to generate and store keypair:', error)
+    throw error
+  }
+}
+
+export async function getECDSAPrivateKey(userId: string): Promise<CryptoKey> {
+  try {
+    const stored = getStoredKeyPair(userId)
+    if (!stored) {
+      throw new Error(`No keypair found for user ${userId}`)
+    }
+
+    return await importECDSAPrivateKey(stored.ecdsaPrivateKey)
+  } catch (error) {
+    console.error('Failed to get ECDSA private key:', error)
+    throw error
+  }
+}
+
+export async function getECDSAPublicKey(userId: string): Promise<CryptoKey> {
+  try {
+    const stored = getStoredKeyPair(userId)
+    if (!stored) {
+      throw new Error(`No keypair found for user ${userId}`)
+    }
+
+    return await importECDSAPublicKey(stored.ecdsaPublicKey)
+  } catch (error) {
+    console.error('Failed to get ECDSA public key:', error)
+    throw error
+  }
+}
+
+export async function getECDHPrivateKey(userId: string): Promise<CryptoKey> {
+  try {
+    const stored = getStoredKeyPair(userId)
+    if (!stored) {
+      throw new Error(`No keypair found for user ${userId}`)
+    }
+
+    return await importECDHPrivateKey(stored.ecdhPrivateKey)
+  } catch (error) {
+    console.error('Failed to get ECDH private key:', error)
+    throw error
+  }
+}
+
+export async function getECDHPublicKey(userId: string): Promise<CryptoKey> {
+  try {
+    const stored = getStoredKeyPair(userId)
+    if (!stored) {
+      throw new Error(`No keypair found for user ${userId}`)
+    }
+
+    return await importECDHPublicKey(stored.ecdhPublicKey)
+  } catch (error) {
+    console.error('Failed to get ECDH public key:', error)
+    throw error
+  }
+}
+
+export function hasKeyPair(userId: string): boolean {
+  if (typeof window === 'undefined') return false
+  try {
+    return localStorage.getItem(`keypair_${userId}`) !== null
+  } catch {
+    return false
+  }
+}
+
+export function getStoredKeyPair(userId: string): StoredKeyPair | null {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const data = localStorage.getItem(`keypair_${userId}`)
+    return data ? JSON.parse(data) : null
+  } catch (error) {
+    console.error('Failed to get stored keypair:', error)
+>>>>>>> 3a501849fe490e808d9b43c89869e5bdbc8b78d9
     return null
   }
 }
 
+<<<<<<< HEAD
 /** Get the public keys as JWK strings (convenience) */
 export function getPublicKeys(
   userId: string
@@ -203,5 +341,28 @@ export async function rotateKeyPair(
     throw new Error(
       `Key rotation failed: ${error instanceof Error ? error.message : 'Unknown error'}`
     )
+=======
+export function clearKeyPair(userId: string): void {
+  if (typeof window === 'undefined') return
+
+  try {
+    localStorage.removeItem(`keypair_${userId}`)
+  } catch (error) {
+    console.error('Failed to clear keypair:', error)
+  }
+}
+
+export function getKeyFingerprint(userId: string): string {
+  try {
+    const stored = getStoredKeyPair(userId)
+    if (!stored) return ''
+
+    // Create a simple fingerprint from the first 16 chars of hashed public key
+    const hash = stored.ecdsaPublicKey.substring(0, 32)
+    return hash.toUpperCase()
+  } catch (error) {
+    console.error('Failed to get key fingerprint:', error)
+    return ''
+>>>>>>> 3a501849fe490e808d9b43c89869e5bdbc8b78d9
   }
 }
