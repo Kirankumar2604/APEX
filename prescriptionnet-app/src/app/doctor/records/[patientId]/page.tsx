@@ -63,6 +63,51 @@ export default function PatientRecordsPage() {
 
   const consent = getConsentForRequester(patientId, currentUser.id)
 
+  if (!consent) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0f172a' }}>
+        <Navbar />
+        <main style={{ maxWidth: '600px', margin: '80px auto', padding: '0 24px' }}>
+          <Card
+            id="card-access-denied"
+            header={
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Lock className="w-5 h-5 text-red-500" />
+                <span style={{ fontSize: '16px', fontWeight: 700, color: '#f1f5f9' }}>
+                  Access Unauthorized
+                </span>
+              </div>
+            }
+          >
+            <div style={{ textAlign: 'center', padding: '24px 12px' }}>
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(239, 68, 68, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px'
+              }}>
+                <Lock className="w-8 h-8 text-red-500" />
+              </div>
+              <h3 style={{ fontSize: '18px', fontWeight: 700, color: '#f1f5f9', marginBottom: '8px' }}>
+                Decryption Access Required
+              </h3>
+              <p style={{ fontSize: '14.5px', color: '#94a3b8', lineHeight: 1.6, marginBottom: '24px' }}>
+                You do not hold a signature-verified decryption key for this patient's vault. The patient must grant you consent from their dashboard before you can access these records.
+              </p>
+              <Button onClick={() => router.push('/doctor')} variant="primary" style={{ width: '100%' }}>
+                Go Back to Dashboard
+              </Button>
+            </div>
+          </Card>
+        </main>
+      </div>
+    )
+  }
+
   const tabStyle = (isActive: boolean) => ({
     padding: '12px 16px',
     borderRadius: '8px 8px 0 0',

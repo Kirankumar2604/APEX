@@ -489,19 +489,26 @@ export default function DoctorDashboard() {
             id="card-patient-safety"
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              {vaults.map(vault => {
-                const safety = getSafetyByPatientId(vault.patientId)
-                const fraud = getFraudByPatientId(vault.patientId)
-                return (
-                  <div
-                    key={vault.patientId}
-                    style={{
-                      padding: '14px',
-                      borderRadius: '12px',
-                      background: 'rgba(15, 23, 42, 0.5)',
-                      border: '1px solid #334155'
-                    }}
-                  >
+              {vaults.filter(v => !!getConsentForRequester(v.patientId, currentUser.id)).length === 0 ? (
+                <p style={{ color: '#64748b', fontSize: '14px', textAlign: 'center', padding: '20px 0' }}>
+                  No authorized patients. Search and request access for a patient to view their safety and fraud overview here.
+                </p>
+              ) : (
+                vaults
+                  .filter(v => !!getConsentForRequester(v.patientId, currentUser.id))
+                  .map(vault => {
+                    const safety = getSafetyByPatientId(vault.patientId)
+                    const fraud = getFraudByPatientId(vault.patientId)
+                    return (
+                      <div
+                        key={vault.patientId}
+                        style={{
+                          padding: '14px',
+                          borderRadius: '12px',
+                          background: 'rgba(15, 23, 42, 0.5)',
+                          border: '1px solid #334155'
+                        }}
+                      >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                       <div>
                         <p style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9' }}>{vault.patientName}</p>
@@ -527,7 +534,7 @@ export default function DoctorDashboard() {
                     </div>
                   </div>
                 )
-              })}
+              }))}
             </div>
           </Card>
 
@@ -554,12 +561,20 @@ export default function DoctorDashboard() {
                   return (
                     <div
                       key={req.id}
+                      onClick={() => {
+                        if (req.status === 'active') {
+                          router.push(`/doctor/records/${req.patientId}`)
+                        }
+                      }}
                       style={{
                         padding: '14px',
                         borderRadius: '12px',
                         background: 'rgba(15, 23, 42, 0.5)',
-                        border: '1px solid #334155'
+                        border: '1px solid #334155',
+                        cursor: req.status === 'active' ? 'pointer' : 'default',
+                        transition: 'all 0.2s'
                       }}
+                      className={req.status === 'active' ? 'hover:bg-slate-800/80 hover:border-cyan-500/40' : ''}
                     >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                         <p style={{ fontSize: '14px', fontWeight: 600, color: '#f1f5f9' }}>
