@@ -1,148 +1,122 @@
-import { NextRequest, NextResponse } from 'next/server'
-import type { PatientVault, FraudAnalysis } from '@/types'
-import { runAllFraudRules, calculateRuleBasedScore, combineFraudResults } from '@/lib/fraudRules'
+import type { Prescription, FraudAnalysis } from '@/types'
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+interface FraudRequestBody {
+  patientName: string
+  prescriptions: Prescription[]
+  medicationHistory: string[]
+}
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  try {
-    if (!ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { error: 'API key not configured' },
-        { status: 500 }
-      )
-    }
+const SYSTEM_PROMPT = `You are a Prescription Fraud Detection Agent for a medical AI system.
+Your role is to identify suspicious prescription patterns and potential
+fraud for authorized review only. You analyze patterns, not individual
+patients. Always explain your findings clearly.
 
-    const vault: PatientVault = await request.json()
-
-    // Validate vault
-    if (!vault.patientId || !vault.prescriptions) {
-      return NextResponse.json(
-        { error: 'Invalid vault data' },
-        { status: 400 }
-      )
-    }
-
-    // 1. Run rule-based fraud detection first (instant)
-    const ruleFlags = runAllFraudRules(vault.prescriptions)
-    const ruleScore = calculateRuleBasedScore(ruleFlags)
-
-    // 2. Run AI analysis
-    const prescriptionsList = vault.prescriptions
-      .map(
-        (rx) =>
-          `- ${rx.drugName} ${rx.dosage}, ${rx.frequency} (by ${rx.prescribedBy}, prescribed: ${rx.prescribedDate})`
-      )
-      .join('\n')
-
-    const prompt = `You are a Prescription Fraud Detection Agent.
-
-Patient: ${vault.patientName}
-Patient ID: ${vault.patientId}
-
-Current Prescriptions:
-${prescriptionsList}
-
-Analyze for fraud patterns including:
-1. Doctor shopping (multiple prescribers for same drug)
-2. Rapid refills (multiple fills in short timeframe)
-3. Controlled substance abuse patterns
-4. Prescription alterations or forgeries (if detectable from data)
-5. Dosage irregularities
-
-Return ONLY valid JSON (no markdown, no code blocks) with this exact structure:
+Return ONLY a valid JSON object with NO additional text:
 {
-  "fraud_risk_score": 0-100,
-  "flags": [{"type": "...", "explanation": "...", "severity": "HIGH|MEDIUM|LOW", "detected_by": "ai"}],
-  "summary": "...",
-  "disclaimer": "This analysis is AI-assisted and must be reviewed by qualified professionals."
+  'fraud_risk_score': number between 0 and 100,
+  'flags': [
+    {
+      'type': 'flag type name',
+      'explanation': 'detailed explanation',
+      'severity': 'HIGH' or 'MEDIUM' or 'LOW',
+      'detected_by': 'ai'
+    }
+  ],
+  'summary': 'overall summary of findings in 2-3 sentences',
+  'disclaimer': 'AI-generated pattern analysis for authorized
+    review only. Not a legal determination.'
 }`
 
+function buildUserMessage(body: FraudRequestBody): string {
+  const prescriptions = body.prescriptions
+    .map((prescription) => `- ${prescription.drugName} ${prescription.dosage} prescribed by ${prescription.prescribedBy} on ${prescription.prescribedDate}`)
+    .join('\n')
+  const medicationHistory = body.medicationHistory.length
+    ? body.medicationHistory.map((item) => `- ${item}`).join('\n')
+    : 'None'
+
+  return `Analyze this prescription history for suspicious patterns:\n\nPatient: ${body.patientName}\n\nPRESCRIPTIONS:\n${prescriptions}\n\nMEDICATION HISTORY:\n${medicationHistory}\n\nLook for:\n1. Same drug prescribed by multiple doctors (doctor shopping)\n2. Controlled substances prescribed unusually frequently\n3. Duplicate medications with different dosages\n4. Unusual timing patterns between prescriptions\n5. Insurance fraud indicators\n6. Any other suspicious patterns\n\nReturn a fraud risk score 0-100 and list all flags found.`
+}
+
+function sanitizeJsonResponse(text: string): string {
+  return text.replace(/```/g, '').replace(/`/g, '').trim()
+}
+
+function parseRiskLevel(value: string): FraudAnalysis['flags'][number]['severity'] {
+  const normalized = value?.toUpperCase?.().trim()
+  if (normalized === 'HIGH' || normalized === 'MEDIUM' || normalized === 'LOW' || normalized === 'SAFE') {
+    return normalized
+  }
+  return 'LOW'
+}
+
+export async function POST(request: Request) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return new Response(JSON.stringify({ error: 'Missing Anthropic API key' }), { status: 500, headers: { 'content-type': 'application/json' } })
+  }
+
+  let body: FraudRequestBody
+
+  try {
+    body = (await request.json()) as FraudRequestBody
+  } catch {
+    return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400, headers: { 'content-type': 'application/json' } })
+  }
+
+  const userMessage = buildUserMessage(body)
+
+  try {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        'content-type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1500,
-        messages: [
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-      }),
+        model: 'claude-sonnet-4-6',
+        max_tokens: 2000,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userMessage }]
+      })
     })
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Claude API error:', errorText)
-
-      // Fall back to rule-based analysis only
-      const fallbackAnalysis: FraudAnalysis = {
-        fraudRiskScore: ruleScore,
-        flags: ruleFlags,
-        summary: ruleScore > 50 ? 'Rule-based fraud risk detected' : 'Low fraud risk',
-        disclaimer:
-          'Rule-based analysis only. AI analysis unavailable. Review by physician recommended.',
-      }
-
-      return NextResponse.json(fallbackAnalysis)
+      return new Response(JSON.stringify({ error: 'Claude API error', details: errorText }), { status: 502, headers: { 'content-type': 'application/json' } })
     }
 
-    const data = await response.json()
-    const responseText = data.content[0]?.text || ''
+    const json = await response.json()
+    const text = String(json?.content?.[0]?.text ?? '')
+    const cleaned = sanitizeJsonResponse(text)
 
-    // Parse JSON from response
-    let aiAnalysis
+    let parsed: unknown
     try {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/)
-      const jsonString = jsonMatch ? jsonMatch[0] : responseText
-      aiAnalysis = JSON.parse(jsonString)
+      parsed = JSON.parse(cleaned)
     } catch {
-      console.error('Failed to parse Claude response:', responseText)
-      // Fall back to rule-based analysis
-      const fallbackAnalysis: FraudAnalysis = {
-        fraudRiskScore: ruleScore,
-        flags: ruleFlags,
-        summary: 'Rule-based fraud analysis completed',
-        disclaimer: 'Analysis based on rule engine only.',
-      }
-
-      return NextResponse.json(fallbackAnalysis)
+      return new Response(JSON.stringify({ error: 'Failed to parse Claude response', raw: cleaned }), { status: 500, headers: { 'content-type': 'application/json' } })
     }
 
-    // Combine rule-based and AI results
-    const combinedAnalysis: FraudAnalysis = {
-      fraudRiskScore: aiAnalysis.fraud_risk_score || ruleScore,
-      flags: [
-        ...ruleFlags,
-        ...(aiAnalysis.flags || []).map((f: any) => ({
-          ...f,
-          severity: f.severity || 'MEDIUM',
-          detectedBy: 'ai' as const,
-        })),
-      ],
-      summary: aiAnalysis.summary || 'Fraud analysis completed',
-      disclaimer:
-        aiAnalysis.disclaimer ||
-        'AI-assisted fraud detection for physician review only.',
+    const parsedObject = typeof parsed === 'object' && parsed !== null ? parsed as Record<string, unknown> : {}
+    const flagsArray = Array.isArray(parsedObject.flags) ? parsedObject.flags as unknown[] : []
+
+    const fraudAnalysis: FraudAnalysis = {
+      fraudRiskScore: Number(parsedObject.fraud_risk_score) || 0,
+      flags: flagsArray.map((flag) => {
+        const candidate = typeof flag === 'object' && flag !== null ? flag as Record<string, unknown> : {}
+        return {
+          type: String(candidate.type ?? ''),
+          explanation: String(candidate.explanation ?? ''),
+          severity: parseRiskLevel(String(candidate.severity ?? 'LOW')),
+          detectedBy: 'ai'
+        }
+      }),
+      summary: String(parsedObject.summary ?? ''),
+      disclaimer: String(parsedObject.disclaimer ?? 'AI-generated pattern analysis for authorized review only. Not a legal determination.')
     }
 
-    // Increment fraud counter if needed
-    if (combinedAnalysis.fraudRiskScore > 50) {
-      // Fraud alert counter would be incremented here
-    }
-
-    return NextResponse.json(combinedAnalysis)
-  } catch (error) {
-    console.error('Fraud detection error:', error)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    )
+    return new Response(JSON.stringify(fraudAnalysis), { status: 200, headers: { 'content-type': 'application/json' } })
+  } catch (error: unknown) {
+    return new Response(JSON.stringify({ error: 'Claude API request failed', details: String(error) }), { status: 502, headers: { 'content-type': 'application/json' } })
   }
 }
