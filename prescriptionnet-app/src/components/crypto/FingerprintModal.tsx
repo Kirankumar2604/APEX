@@ -18,6 +18,7 @@ export function FingerprintModal({ mode, onSuccess, onCancel, patientId, patient
   const [progress, setProgress] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [isRealAuthnSupported, setIsRealAuthnSupported] = useState(false)
+  const [isSimulated, setIsSimulated] = useState(false)
 
   useEffect(() => {
     // Check if WebAuthn is supported by browser
@@ -29,7 +30,7 @@ export function FingerprintModal({ mode, onSuccess, onCancel, patientId, patient
   // Simulated scan progress
   useEffect(() => {
     let interval: NodeJS.Timeout
-    if (scanState === 'scanning' && errorMsg === '') {
+    if (scanState === 'scanning' && isSimulated) {
       interval = setInterval(() => {
         setProgress((prev) => {
           if (prev >= 100) {
@@ -45,7 +46,7 @@ export function FingerprintModal({ mode, onSuccess, onCancel, patientId, patient
     }
 
     return () => clearInterval(interval)
-  }, [scanState, errorMsg])
+  }, [scanState, isSimulated])
 
   // Trigger success callback after check animation
   useEffect(() => {
@@ -58,6 +59,7 @@ export function FingerprintModal({ mode, onSuccess, onCancel, patientId, patient
   }, [scanState, onSuccess])
 
   const handleStartRealScan = async () => {
+    setIsSimulated(false)
     setErrorMsg('')
     setScanState('scanning')
 
@@ -129,6 +131,7 @@ export function FingerprintModal({ mode, onSuccess, onCancel, patientId, patient
   }
 
   const handleStartSimulatedScan = () => {
+    setIsSimulated(true)
     setErrorMsg('')
     setScanState('scanning')
   }

@@ -17,7 +17,7 @@ import Card from '@/components/ui/Card'
 import Badge, { riskToBadgeVariant, statusToBadgeVariant } from '@/components/ui/Badge'
 import CountdownTimer from '@/components/dashboard/CountdownTimer'
 import { getVaultByPatientId, getSafetyByPatientId, MOCK_USERS } from '@/data/mockData'
-import { getAccessRequests, getActiveConsents } from '@/lib/consent'
+import { getAccessRequests, getActiveConsents, revokeConsent, updateRequestStatus } from '@/lib/consent'
 import type { User, AccessRequest, Consent } from '@/types'
 import FingerprintModal from '@/components/crypto/FingerprintModal'
 
@@ -63,6 +63,15 @@ export default function PatientDashboard() {
       setBiometricEnabled(false)
     } else {
       setRegisteringBiometric(true)
+    }
+  }
+
+  const handleRevoke = (consentId: string, requestId: string) => {
+    if (currentUser) {
+      revokeConsent(consentId, currentUser.id)
+      updateRequestStatus(requestId, 'revoked')
+      setActiveConsents(getActiveConsents(currentUser.id))
+      setPendingRequests(getAccessRequests(currentUser.id).filter(r => r.status === 'pending'))
     }
   }
 
@@ -309,7 +318,33 @@ export default function PatientDashboard() {
                         <Badge variant="info" size="sm">{consent.purpose}</Badge>
                         <Badge variant="neutral" size="sm">{consent.scope}</Badge>
                       </div>
-                      <CountdownTimer expiresAt={consent.expiresAt} compact />
+                      
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '12px' }}>
+                        <CountdownTimer expiresAt={consent.expiresAt} compact />
+                        <button
+                          id={`revoke-dashboard-${consent.id}`}
+                          onClick={() => handleRevoke(consent.id, consent.requestId)}
+                          style={{
+                            background: 'transparent',
+                            color: '#ef4444',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            borderRadius: '8px',
+                            padding: '4px 10px',
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            transition: 'all 200ms',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'transparent'
+                          }}
+                        >
+                          Deactivate
+                        </button>
+                      </div>
                     </div>
                   )
                 })}

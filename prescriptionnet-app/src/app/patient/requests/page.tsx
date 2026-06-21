@@ -15,7 +15,7 @@ import Navbar from '@/components/layout/Navbar'
 import Card from '@/components/ui/Card'
 import Badge, { statusToBadgeVariant } from '@/components/ui/Badge'
 import { getAllUsers } from '@/data/mockData'
-import { getAccessRequests, denyRequest } from '@/lib/consent'
+import { getAccessRequests, denyRequest, getConsents, revokeConsent, updateRequestStatus } from '@/lib/consent'
 import type { User, AccessRequest } from '@/types'
 import SignatureVerifier from '@/components/crypto/SignatureVerifier'
 import { patientAuthorizeAccess } from '@/lib/cryptoIntegration'
@@ -71,6 +71,18 @@ export default function PatientRequestsPage() {
   const handleDeny = (requestId: string) => {
     if (currentUser) {
       denyRequest(requestId, currentUser.id)
+      refreshRequests()
+    }
+  }
+
+  const handleRevoke = (requestId: string) => {
+    if (currentUser) {
+      const consents = getConsents(currentUser.id)
+      const consent = consents.find(c => c.requestId === requestId && c.status === 'active')
+      if (consent) {
+        revokeConsent(consent.id, currentUser.id)
+      }
+      updateRequestStatus(requestId, 'revoked')
       refreshRequests()
     }
   }
@@ -385,21 +397,52 @@ export default function PatientRequestsPage() {
 
                   {/* Active badge */}
                   {isActive && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px',
-                        padding: '10px 14px',
-                        borderRadius: '10px',
-                        background: 'rgba(34, 197, 94, 0.08)',
-                        border: '1px solid rgba(34, 197, 94, 0.2)',
-                      }}
-                    >
-                      <CheckCircle className="w-4 h-4" style={{ color: '#22c55e' }} />
-                      <span style={{ fontSize: '13px', color: '#22c55e', fontWeight: 500 }}>
-                        Access authorized — cryptographically signed
-                      </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          background: 'rgba(34, 197, 94, 0.08)',
+                          border: '1px solid rgba(34, 197, 94, 0.2)',
+                        }}
+                      >
+                        <CheckCircle className="w-4 h-4" style={{ color: '#22c55e' }} />
+                        <span style={{ fontSize: '13px', color: '#22c55e', fontWeight: 500 }}>
+                          Access authorized — cryptographically signed
+                        </span>
+                      </div>
+                      
+                      <button
+                        id={`revoke-${request.id}`}
+                        onClick={() => handleRevoke(request.id)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          padding: '8px 16px',
+                          borderRadius: '10px',
+                          background: 'transparent',
+                          color: '#ef4444',
+                          border: '1px solid rgba(239, 68, 68, 0.3)',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 200ms',
+                          width: 'fit-content',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)'
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.background = 'transparent'
+                        }}
+                      >
+                        Deactivate Access
+                      </button>
                     </div>
                   )}
                 </div>
